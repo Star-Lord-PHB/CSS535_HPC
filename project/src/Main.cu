@@ -1,48 +1,80 @@
 #include <iostream>
-#include "tsp.h"
-#include <cuda_runtime.h>
-#include <vector>
-#include "TSP_individual.hpp"
+#include "TSP.h"
+#include "GAInterface.h"
+#include "GA_CPU.h"
+#include "GA_CUDA.h"
 
-#define THREADS_PER_BLOCK 256
+// 枚举用于选择实现版本
+enum class Implementation { CPU, CUDA };
 
+struct GAFunctionSet {
+    GA::ParentPairs (*selection)(TSP &);
+    GA::Offspring (*crossover)(const TSP &, const GA::ParentPairs &);
+    void (*mutation)(const TSP &, GA::Offspring &);
+    void (*replacement)(TSP &, const GA::ParentPairs &, const GA::Offspring &);
+    void (*migration)(TSP &);
+    void (*updateFitness)(TSP &);
+};
 
 int main() {
-    // 参数设置
+    // GA 算法参数设置
     int numCities = 10;
     int popSize = 20;
     int mapSize = 100;
+    int numIslands = 2;
+    float parentSelectionRate = 0.5f;
+    float crossoverProbability = 0.7f;
+    float mutationProbability = 0.05f;
+    int generations = 100;
 
-    // 在host上实例化TSP对象，初始化数据
-    TSP tsp(numCities, popSize, mapSize);
+    // 选择实现版本
+    Implementation impl = Implementation::CUDA; // 或 CPU
 
-    // 将数据传输到device
-    float* d_distanceMatrix = tsp.transferDistanceMatrixToDevice();
-    int* d_population = tsp.transferPopulationToDevice();
-
-    // 为适应度分配device内存
-    float* d_fitness;
-    cudaMalloc(&d_fitness, popSize * sizeof(float));
-
-    int blocks = (popSize + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
-    fitnessKernel<<<blocks, THREADS_PER_BLOCK>>>(d_population, d_distanceMatrix,
-                                                 d_fitness, numCities, popSize);
-    cudaDeviceSynchronize();
-
-    // 将结果拷回host并输出
-    std::vector<float> h_fitness(popSize);
-    cudaMemcpy(h_fitness.data(), d_fitness, popSize * sizeof(float),
-               cudaMemcpyDeviceToHost);
-
-    std::cout << "Fitness(distance)" << std::endl;
-    for (int i = 0; i < popSize; i++) {
-        std::cout << "Individual " << i << ": " << h_fitness[i] << std::endl;
+    GAFunctionSet gaFuncs;
+    if (impl == Implementation::CPU) {
+        gaFuncs.selection = GA::selectionCPU;
+        gaFuncs.crossover = GA::crossoverCPU;
+        gaFuncs.mutation = GA::mutationCPU;
+        gaFuncs.replacement = GA::replacementCPU;
+        gaFuncs.migration = GA::migrationCPU;
+        gaFuncs.updateFitness = GA::updateFitnessCPU;
+    } else { // Implementation::CUDA
+        gaFuncs.selection = GA::selectionCUDA;
+        gaFuncs.crossover = GA::crossoverCUDA;
+        gaFuncs.mutation = GA::mutationCUDA;
+        gaFuncs.replacement = GA::replacementCUDA;
+        gaFuncs.migration = GA::migrationCUDA;
+        gaFuncs.updateFitness = GA::updateFitnessCUDA;
     }
 
-    // 释放device内存
-    cudaFree(d_distanceMatrix);
-    cudaFree(d_population);
-    cudaFree(d_fitness);
+    // 初始化 TSP 问题（构造函数会生成城市、种群和距离矩阵）
+    TSP tsp(numCities, popSize, mapSize, numIslands,
+            parentSelectionRate, crossoverProbability, mutationProbability);
+
+    // 初始适应度更新
+    gaFuncs.updateFitness(tsp);
+
+    // 迭代 GA 算法
+    for (int gen = 0; gen < generations; gen++) {
+        auto parentPairs = gaFuncs.selection(tsp);
+        auto offspring = gaFuncs.crossover(tsp, parentPairs);
+        gaFuncs.mutation(tsp, offspring);
+        gaFuncs.replacement(tsp, parentPairs, offspring);
+        gaFuncs.migration(tsp);
+
+        // 更新适应度（采用不同的实现）
+        gaFuncs.updateFitness(tsp);
+
+        std::cout << "Generation " << gen << " complete.\n";
+        for (int island = 0; island < tsp.numIslands; island++) {
+            float bestFit = -1.0f;
+            for (const auto &ind : tsp.population[island]) {
+                if (ind.fitness > bestFit)
+                    bestFit = ind.fitness;
+            }
+            std::cout << "  Island " << island << " best fitness: " << bestFit << std::endl;
+        }
+    }
 
     return 0;
 }
