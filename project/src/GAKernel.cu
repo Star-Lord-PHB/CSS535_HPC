@@ -14,8 +14,8 @@ struct Array2D {
         if (i < 0 || i > x) {
             throw std::runtime_error("array index out of bound");
         }
-        return array + i * y; 
-    } 
+        return array + i * y;
+    }
 
 };
 
@@ -81,7 +81,7 @@ __global__ void ga_kernel(int* const solution, const int geneMin, int const gene
     auto const fitnessCalcArea = sharedMemory + chromosomeLength * 2;
     auto const blockSharedRandomValue = (float*) sharedMemory + chromosomeLength * 3 + 2;
 
-    // operating on either `solution` or `solutionWrapped` are the same 
+    // operating on either `solution` or `solutionWrapped` are the same
     auto solutionWrapped = Array3D(solution, islandCount, individualCount, chromosomeLength);
 
     curandState curandState;
@@ -165,5 +165,5 @@ __global__ void ga_kernel(int* const solution, const int geneMin, int const gene
             }
         }
     }
-
 }
+

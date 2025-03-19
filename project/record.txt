@@ -1,0 +1,22 @@
+策略：
+cpu vs gpu
+个体 vs 基因
+
+- 平行化不同的环节
+- configuration
+
+排序 vs 不排序##
+
+matrix：
+时间，最后最优fitness（放在cpu中找），
+
+
+用哪个问题：TSP。
+
+实现细节：
+选一部分parent（概率）
+crossover概率
+mutation概率
+
+
+
