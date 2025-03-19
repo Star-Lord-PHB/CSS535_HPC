@@ -130,15 +130,23 @@ void runShareMemory() {
             10000, 10000
         ),
         Config(
+            KernelConfig(dim3(100, 1, 1), dim3(128, 1, 1)), 
+            10000, 10000
+        ),
+        Config(
+            KernelConfig(dim3(32, 1, 1), dim3(320, 1, 1)), 
+            10000, 10000
+        ),
+        Config(
+            KernelConfig(dim3(16, 1, 1), dim3(640, 1, 1)), 
+            10000, 10000
+        ),
+        Config(
             KernelConfig(dim3(10, 1, 1), dim3(1024, 1, 1)), 
             10000, 10000
         ),
         Config(
             KernelConfig(dim3(10, 1, 1), dim3(1000, 1, 1)), 
-            10000, 10000
-        ),
-        Config(
-            KernelConfig(dim3(100, 1, 1), dim3(128, 1, 1)), 
             10000, 10000
         ),
     };
@@ -169,12 +177,6 @@ void runShareMemory() {
         auto debugOut = new Array<double>(config.N);
         runOnce(config.kernelConfig, *mat, *vec, *vecOut, *debugOut);
         
-        // std::cout << "test: " << *vec << std::endl;
-        // std::cout << "test: " << *debugOut << std::endl;
-        // std::cout << "test: " << *vecOut << std::endl;
-        // std::cout << "test: " << *vecOutCPU << std::endl;
-        // std::cout << "diff: " << vecOut->diff(*vecOutCPU) << std::endl;
-        
         delete debugOut;
 
 #if CORRECTNESS_CHECK
@@ -182,8 +184,7 @@ void runShareMemory() {
 #endif
         vecOut->fill(0);
 
-        auto vecOut1 = new Array<double>(config.M);
-        runNaiveOnce(config.kernelConfig, *mat, *vec, *vecOut1);
+        runNaiveOnce(config.kernelConfig, *mat, *vec, *vecOut);
 
         delete mat;
         delete vec;

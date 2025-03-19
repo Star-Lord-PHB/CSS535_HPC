@@ -1,5 +1,5 @@
 Naive.obj : src/Naive.cu \
-    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/labs/labN/src/Naive.cu \
+    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/labN/src/Naive.cu \
     C:/Program\ Files/NVIDIA\ GPU\ Computing\ Toolkit/CUDA/v12.6/bin/../include/cuda_runtime.h \
     C:/Program\ Files/NVIDIA\ GPU\ Computing\ Toolkit/CUDA/v12.6/include/crt/host_config.h \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/crtdefs.h \
@@ -105,7 +105,7 @@ Naive.obj : src/Naive.cu \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/utility \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/initializer_list \
     include/NaiveGemv.hpp \
-    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/labs/labN/include/Array.hpp \
+    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/labN/include/Array.hpp \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/iostream \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/istream \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/ostream \
@@ -163,9 +163,9 @@ Naive.obj : src/Naive.cu \
     C:/Program\ Files\ (x86)/Windows\ Kits/10/include/10.0.22621.0/ucrt/locale.h \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/vector \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/__msvc_bit_utils.hpp \
-    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/labs/labN/include/KernelConfig.hpp \
+    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/labN/include/KernelConfig.hpp \
     C:/Program\ Files/NVIDIA\ GPU\ Computing\ Toolkit/CUDA/v12.6/bin/../include/vector_types.h \
-    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/labs/labN/include/Matrix.hpp \
+    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/labN/include/Matrix.hpp \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/numeric \
     include/CpuGemv.hpp \
     include/Validate.hpp \

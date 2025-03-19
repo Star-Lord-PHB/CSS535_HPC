@@ -1,5 +1,5 @@
 Main.obj : src/Main.cu \
-    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/labs/labN/src/Main.cu \
+    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/labN/src/Main.cu \
     C:/Program\ Files/NVIDIA\ GPU\ Computing\ Toolkit/CUDA/v12.6/bin/../include/cuda_runtime.h \
     C:/Program\ Files/NVIDIA\ GPU\ Computing\ Toolkit/CUDA/v12.6/include/crt/host_config.h \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/crtdefs.h \
@@ -170,9 +170,9 @@ Main.obj : src/Main.cu \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/ratio \
     C:/Program\ Files/Microsoft\ Visual\ Studio/2022/Community/VC/Tools/MSVC/14.38.33130/include/xfilesystem_abi.h \
     include/ConfigSet.hpp \
-    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/labs/labN/include/NaiveGemv.hpp \
-    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/labs/labN/include/KernelConfig.hpp \
+    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/labN/include/NaiveGemv.hpp \
+    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/labN/include/KernelConfig.hpp \
     C:/Program\ Files/NVIDIA\ GPU\ Computing\ Toolkit/CUDA/v12.6/bin/../include/vector_types.h \
-    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/labs/labN/include/GlobalMemory.hpp \
-    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/labs/labN/include/ShareMemory.hpp \
-    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/labs/labN/include/Registers.hpp
+    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/labN/include/GlobalMemory.hpp \
+    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/labN/include/ShareMemory.hpp \
+    D:/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/labN/include/Registers.hpp
