@@ -19,8 +19,10 @@ namespace GA {
     void replacement(TSP &tsp, const ParentPairs &parentPairs, const Offspring &offspring);
     void migration(TSP &tsp);
 
-    // 新增：更新整个种群适应度的函数
-    void updateFitness(TSP &tsp);
+    // 更新种群适应度：用于更新父代个体的 fitness
+    void updatePopulationFitness(TSP &tsp);
+    // 更新后代适应度：用于仅更新 offspring 中的 fitness
+    void updateOffspringFitness(TSP &tsp, Offspring &offspring);
 
 } // namespace GA
 

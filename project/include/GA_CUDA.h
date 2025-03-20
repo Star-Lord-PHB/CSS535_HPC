@@ -13,8 +13,11 @@ namespace GA {
     // CUDA 版本适应度计算函数（单个个体版占位）
     float computeFitnessCUDA(const Individual &ind, const TSP &tsp);
 
-    // CUDA 版本更新整个种群适应度的函数（真正利用 CUDA 内核批量更新）
-    void updateFitnessCUDA(TSP &tsp);
+    // CUDA 版本更新种群适应度：用于更新父代个体的 fitness
+    void updatePopulationFitnessCUDA(TSP &tsp);
+
+    // CUDA 版本更新后代适应度：用于仅更新 offspring 的 fitness
+    void updateOffspringFitnessCUDA(TSP &tsp, Offspring &offspring);
 }
 
 #endif

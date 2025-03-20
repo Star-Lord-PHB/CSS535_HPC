@@ -18,11 +18,20 @@ float computeFitnessCPU(const Individual &ind, const TSP &tsp) {
     return (totalDistance <= 0.0f) ? 0.0f : 1.0f / totalDistance;
 }
 
-// 更新整个种群适应度：直接遍历各岛与各个个体
-void updateFitnessCPU(TSP &tsp) {
+// 更新种群的适应度：用于初始化或替换、迁移后更新整个种群的 fitness
+void updatePopulationFitnessCPU(TSP &tsp) {
     for (int island = 0; island < tsp.numIslands; island++) {
         for (auto &ind : tsp.population[island]) {
             ind.fitness = computeFitnessCPU(ind, tsp);
+        }
+    }
+}
+
+// 更新 offspring 的适应度：仅对 offspring 进行适应度计算，避免在 replacement 中重复计算
+void updateOffspringFitnessCPU(TSP &tsp, Offspring &offspring) {
+    for (int island = 0; island < tsp.numIslands; island++) {
+        for (auto &child : offspring[island]) {
+            child.fitness = computeFitnessCPU(child, tsp);
         }
     }
 }
@@ -45,7 +54,7 @@ ParentPairs selectionCPU(TSP &tsp) {
     return parentPairs;
 }
 
-// 2. Crossover: 顺序交叉
+// 2. Crossover: 顺序交叉 (OX)
 Offspring crossoverCPU(const TSP &tsp, const ParentPairs &parentPairs) {
     Offspring offspring(tsp.numIslands);
     std::mt19937 rng(std::random_device{}());
@@ -79,7 +88,6 @@ Offspring crossoverCPU(const TSP &tsp, const ParentPairs &parentPairs) {
                 for (int i = 0; i < tsp.numCities; i++) {
                     int candidateIndex = (point2 + 1 + i) % tsp.numCities;
                     int candidate = pb.chromosome[candidateIndex];
-                    // 如果 candidate 不在子代1的交叉区间内，则填入
                     if (std::find(child1Chromosome.begin(), child1Chromosome.end(), candidate) == child1Chromosome.end()) {
                         child1Chromosome[currentIndex] = candidate;
                         currentIndex = (currentIndex + 1) % tsp.numCities;
@@ -126,6 +134,7 @@ void mutationCPU(const TSP &tsp, Offspring &offspring) {
 }
 
 // 4. Replacement: 用适应度更高的后代替换父代
+// 这里直接使用预先计算好的 fitness 进行比较，不再重复计算
 void replacementCPU(TSP &tsp, const ParentPairs &parentPairs, const Offspring &offspring) {
     for (int island = 0; island < tsp.numIslands; island++) {
         int numPairs = parentPairs[island].size();
@@ -134,11 +143,7 @@ void replacementCPU(TSP &tsp, const ParentPairs &parentPairs, const Offspring &o
             const Individual &pb = parentPairs[island][i].second;
             const Individual &child1 = offspring[island][2*i];
             const Individual &child2 = offspring[island][2*i+1];
-            float paFit = computeFitnessCPU(pa, tsp);
-            float pbFit = computeFitnessCPU(pb, tsp);
-            float c1Fit = computeFitnessCPU(child1, tsp);
-            float c2Fit = computeFitnessCPU(child2, tsp);
-            if (c1Fit > paFit) {
+            if (child1.fitness > pa.fitness) {
                 for (auto &ind : tsp.population[island]) {
                     if (ind.chromosome == pa.chromosome) {
                         ind = child1;
@@ -146,7 +151,7 @@ void replacementCPU(TSP &tsp, const ParentPairs &parentPairs, const Offspring &o
                     }
                 }
             }
-            if (c2Fit > pbFit) {
+            if (child2.fitness > pb.fitness) {
                 for (auto &ind : tsp.population[island]) {
                     if (ind.chromosome == pb.chromosome) {
                         ind = child2;
@@ -163,12 +168,12 @@ void migrationCPU(TSP &tsp) {
     int numIslands = tsp.numIslands;
     std::vector<Individual> bestIndividuals(numIslands);
     std::vector<int> worstIndex(numIslands, -1);
-    for (int island = 0; island < numIslands; island++) {
+    for (int island = 0; island < tsp.numIslands; island++) {
         float bestFit = -1.0f;
         float worstFit = 1e9;
         int worstIdx = -1;
         for (int i = 0; i < tsp.population[island].size(); i++) {
-            float fit = computeFitnessCPU(tsp.population[island][i], tsp);
+            float fit = tsp.population[island][i].fitness;
             if (fit > bestFit) {
                 bestFit = fit;
                 bestIndividuals[island] = tsp.population[island][i];
@@ -182,8 +187,8 @@ void migrationCPU(TSP &tsp) {
     }
     for (int island = 0; island < numIslands; island++) {
         int prevIsland = (island - 1 + numIslands) % numIslands;
-        float incomingFit = computeFitnessCPU(bestIndividuals[prevIsland], tsp);
-        float currentWorstFit = computeFitnessCPU(tsp.population[island][worstIndex[island]], tsp);
+        float incomingFit = bestIndividuals[prevIsland].fitness;
+        float currentWorstFit = tsp.population[island][worstIndex[island]].fitness;
         if (incomingFit > currentWorstFit) {
             tsp.population[island][worstIndex[island]] = bestIndividuals[prevIsland];
         }

@@ -13,7 +13,8 @@ struct GAFunctionSet {
     void (*mutation)(const TSP &, GA::Offspring &);
     void (*replacement)(TSP &, const GA::ParentPairs &, const GA::Offspring &);
     void (*migration)(TSP &);
-    void (*updateFitness)(TSP &);
+    void (*updatePopulationFitness)(TSP &);
+    void (*updateOffspringFitness)(TSP &, GA::Offspring &);
 };
 
 int main() {
@@ -28,7 +29,7 @@ int main() {
     int generations = 100;
 
     // 选择实现版本
-    Implementation impl = Implementation::CUDA; // 或 CPU
+    Implementation impl = Implementation::CPU; // 或 CPU
 
     GAFunctionSet gaFuncs;
     if (impl == Implementation::CPU) {
@@ -37,33 +38,42 @@ int main() {
         gaFuncs.mutation = GA::mutationCPU;
         gaFuncs.replacement = GA::replacementCPU;
         gaFuncs.migration = GA::migrationCPU;
-        gaFuncs.updateFitness = GA::updateFitnessCPU;
+        gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCPU;
+        gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCPU;
     } else { // Implementation::CUDA
         gaFuncs.selection = GA::selectionCUDA;
         gaFuncs.crossover = GA::crossoverCUDA;
         gaFuncs.mutation = GA::mutationCUDA;
         gaFuncs.replacement = GA::replacementCUDA;
         gaFuncs.migration = GA::migrationCUDA;
-        gaFuncs.updateFitness = GA::updateFitnessCUDA;
+        gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA;
+        gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;
     }
 
     // 初始化 TSP 问题（构造函数会生成城市、种群和距离矩阵）
     TSP tsp(numCities, popSize, mapSize, numIslands,
             parentSelectionRate, crossoverProbability, mutationProbability);
 
-    // 初始适应度更新
-    gaFuncs.updateFitness(tsp);
+    // 初始适应度更新：更新种群的 fitness
+    gaFuncs.updatePopulationFitness(tsp);
 
     // 迭代 GA 算法
     for (int gen = 0; gen < generations; gen++) {
         auto parentPairs = gaFuncs.selection(tsp);
         auto offspring = gaFuncs.crossover(tsp, parentPairs);
         gaFuncs.mutation(tsp, offspring);
+
+        // 更新 offspring 的适应度：只计算新生成的子代
+        gaFuncs.updateOffspringFitness(tsp, offspring);
+
+        // 用 offspring 替换种群中较差的父代
         gaFuncs.replacement(tsp, parentPairs, offspring);
+
+        // 岛间迁移
         gaFuncs.migration(tsp);
 
-        // 更新适应度（采用不同的实现）
-        gaFuncs.updateFitness(tsp);
+        // 替换后更新整个种群的适应度
+        gaFuncs.updatePopulationFitness(tsp);
 
         std::cout << "Generation " << gen << " complete.\n";
         for (int island = 0; island < tsp.numIslands; island++) {
