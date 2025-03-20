@@ -50,17 +50,56 @@ Offspring crossoverCPU(const TSP &tsp, const ParentPairs &parentPairs) {
     Offspring offspring(tsp.numIslands);
     std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> probDist(0.0f, 1.0f);
+    std::uniform_int_distribution<int> pointDist(0, tsp.numCities - 1);
+
     for (int island = 0; island < tsp.numIslands; island++) {
         for (const auto &pair : parentPairs[island]) {
             const Individual &pa = pair.first;
             const Individual &pb = pair.second;
-            Individual child1 = pa, child2 = pb;
+            Individual child1 = pa, child2 = pb; // 默认直接复制父代
+
             if (probDist(rng) < tsp.crossoverProbability) {
-                std::uniform_int_distribution<int> crossPointDist(1, tsp.numCities - 1);
-                int crossPoint = crossPointDist(rng);
-                for (int i = crossPoint; i < tsp.numCities; i++) {
-                    std::swap(child1.chromosome[i], child2.chromosome[i]);
+                // 顺序交叉 (OX) 需要选择两个交叉点
+                int point1 = pointDist(rng);
+                int point2 = pointDist(rng);
+                if (point1 > point2) std::swap(point1, point2);
+
+                // 用 -1 初始化临时染色体，表示该位置尚未填充
+                std::vector<int> child1Chromosome(tsp.numCities, -1);
+                std::vector<int> child2Chromosome(tsp.numCities, -1);
+
+                // 复制交叉区间内的基因：子代1复制父代1，子代2复制父代2
+                for (int i = point1; i <= point2; i++) {
+                    child1Chromosome[i] = pa.chromosome[i];
+                    child2Chromosome[i] = pb.chromosome[i];
                 }
+
+                // 填充子代1：按父代2的顺序填充未被复制的基因
+                int currentIndex = (point2 + 1) % tsp.numCities;
+                for (int i = 0; i < tsp.numCities; i++) {
+                    int candidateIndex = (point2 + 1 + i) % tsp.numCities;
+                    int candidate = pb.chromosome[candidateIndex];
+                    // 如果 candidate 不在子代1的交叉区间内，则填入
+                    if (std::find(child1Chromosome.begin(), child1Chromosome.end(), candidate) == child1Chromosome.end()) {
+                        child1Chromosome[currentIndex] = candidate;
+                        currentIndex = (currentIndex + 1) % tsp.numCities;
+                    }
+                }
+
+                // 填充子代2：按父代1的顺序填充未被复制的基因
+                currentIndex = (point2 + 1) % tsp.numCities;
+                for (int i = 0; i < tsp.numCities; i++) {
+                    int candidateIndex = (point2 + 1 + i) % tsp.numCities;
+                    int candidate = pa.chromosome[candidateIndex];
+                    if (std::find(child2Chromosome.begin(), child2Chromosome.end(), candidate) == child2Chromosome.end()) {
+                        child2Chromosome[currentIndex] = candidate;
+                        currentIndex = (currentIndex + 1) % tsp.numCities;
+                    }
+                }
+
+                // 更新子代的染色体
+                child1.chromosome = child1Chromosome;
+                child2.chromosome = child2Chromosome;
             }
             offspring[island].push_back(child1);
             offspring[island].push_back(child2);
