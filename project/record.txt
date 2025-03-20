@@ -2,21 +2,35 @@
 cpu vs gpu
 个体 vs 基因
 
-- 平行化不同的环节
-- configuration
-
-排序 vs 不排序##
-
-matrix：
-时间，最后最优fitness（放在cpu中找），
+- 并行化不同的环节
+- CUDA configuration
 
 
-用哪个问题：TSP。
+metric：
+totalTime, kernelTime, Fitness (CPU as Baseline)
+
+
+用哪个问题：TSP
+
 
 实现细节：
-选一部分parent（概率）
+selection择优/排序
 crossover概率
 mutation概率
+
+
+目前的进度：
+CPU √ (best fitness: 9.92854e-06, Total time: 25.5891 seconds)
+
+GPU-个体 (best fitness: 1.2417e-05, Total time: 59.1334 seconds)
+computeFitness √
+selection
+crossover √
+mutation √
+replacement √
+migration
+
+GPU-基因
 
 
 

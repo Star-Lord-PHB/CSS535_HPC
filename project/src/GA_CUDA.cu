@@ -1,311 +1,268 @@
+// GA_CUDA.cpp
 #include "GA_CUDA.h"
-#include "GA_CPU.h"  // 为占位调用 CPU 版本函数（仅用于部分占位实现）
+#include "GA_CPU.h"  // 部分占位调用 CPU 函数（仅用于 selectionCUDA 的参考）
 #include "TSP.h"
-#include <iostream>
-#include <vector>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
-#include <random>
+#include <ctime>
+#include <iostream>
 
 namespace GA {
-    //---------------------------------------------------------------------
-    // CUDA 内核：批量计算种群适应度
-    //---------------------------------------------------------------------
+
+    // -----------------------------------------------------------
+    // 核函数：计算个体适应度
+    // -----------------------------------------------------------
     __global__ void computeFitnessKernel(const int *d_population,
-                                         const float *d_distanceMatrix,
-                                         float *d_fitness,
-                                         int numCities,
-                                         int popSize) {
+                                           const float *d_distanceMatrix,
+                                           float *d_fitness,
+                                           int numCities,
+                                           int popCount)
+    {
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (idx < popSize) {
-            float totalDistance = 0.0f;
+        if (idx < popCount) {
+            float totalDist = 0.0f;
+            int base = idx * numCities;
             for (int i = 0; i < numCities - 1; i++) {
-                int city1 = d_population[idx * numCities + i];
-                int city2 = d_population[idx * numCities + i + 1];
-                totalDistance += d_distanceMatrix[city1 * numCities + city2];
+                int c1 = d_population[base + i];
+                int c2 = d_population[base + i + 1];
+                totalDist += d_distanceMatrix[c1 * numCities + c2];
             }
-            int firstCity = d_population[idx * numCities];
-            int lastCity = d_population[idx * numCities + numCities - 1];
-            totalDistance += d_distanceMatrix[lastCity * numCities + firstCity];
-            d_fitness[idx] = (totalDistance <= 0.0f) ? 0.0f : 1.0f / totalDistance;
+            // 回到起点
+            int lastCity = d_population[base + numCities - 1];
+            int firstCity = d_population[base];
+            totalDist += d_distanceMatrix[lastCity * numCities + firstCity];
+            d_fitness[idx] = (totalDist <= 0.0f) ? 0.0f : (1.0f / totalDist);
         }
     }
 
-    //---------------------------------------------------------------------
-    // CUDA 版本适应度计算（单个个体）占位：调用 updatePopulationFitnessCUDA 后，再返回对应个体适应度
-    //---------------------------------------------------------------------
-    float computeFitnessCUDA(const Individual &ind, const TSP &tsp) {
-        // 这里不单独计算单个个体，而是建议使用批量更新后查找
-        // 作为占位，调用 CPU 版本
-        return GA::computeFitnessCPU(ind, tsp);
-    }
-
-    //---------------------------------------------------------------------
-    // CUDA 版本更新种群适应度（父代）：批量计算 tsp.population 中所有个体的 fitness
-    //---------------------------------------------------------------------
-    void updatePopulationFitnessCUDA(TSP &tsp) {
-        // 获取种群数据（所有岛展平为连续数组）
-        int *d_population = tsp.transferPopulationToDevice(); // 长度：popSize * numCities
-        float *d_distanceMatrix = tsp.transferDistanceMatrixToDevice(); // 长度：numCities * numCities
-
-        int totalIndividuals = tsp.popSize; // tsp.popSize 为所有岛个体总数
-        float *d_fitness;
-        cudaMalloc(&d_fitness, totalIndividuals * sizeof(float));
-
-        int threads = 256;
-        int blocks = (totalIndividuals + threads - 1) / threads;
-        computeFitnessKernel<<<blocks, threads>>>(d_population, d_distanceMatrix, d_fitness,
-                                                  tsp.numCities, totalIndividuals);
-        cudaDeviceSynchronize();
-
-        // 拷贝计算结果回 host
-        std::vector<float> h_fitness(totalIndividuals);
-        cudaMemcpy(h_fitness.data(), d_fitness, totalIndividuals * sizeof(float), cudaMemcpyDeviceToHost);
-
-        // 根据 TSP::transferPopulationToDevice() 中的展平顺序更新每个个体的 fitness
-        int offset = 0;
-        for (int island = 0; island < tsp.numIslands; island++) {
-            for (int i = 0; i < tsp.population[island].size(); i++) {
-                tsp.population[island][i].fitness = h_fitness[offset];
-                offset++;
-            }
-        }
-
-        cudaFree(d_population);
-        cudaFree(d_distanceMatrix);
-        cudaFree(d_fitness);
-    }
-
-    //---------------------------------------------------------------------
-    // CUDA 版本更新后代适应度：只对 offspring 进行适应度计算
-    //---------------------------------------------------------------------
-    void updateOffspringFitnessCUDA(TSP &tsp, Offspring &offspring) {
-        // 计算所有后代个体数量
-        int totalOffspring = 0;
-        for (int island = 0; island < offspring.size(); island++) {
-            totalOffspring += offspring[island].size();
-        }
-
-        // 将 offspring 展平到连续数组中，每个个体的染色体长度为 tsp.numCities
-        std::vector<int> flatOffspring;
-        flatOffspring.reserve(totalOffspring * tsp.numCities);
-        for (int island = 0; island < offspring.size(); island++) {
-            for (int j = 0; j < offspring[island].size(); j++) {
-                const Individual &ind = offspring[island][j];
-                // 假定 ind.chromosome 的长度等于 tsp.numCities
-                for (int k = 0; k < tsp.numCities; k++) {
-                    flatOffspring.push_back(ind.chromosome[k]);
-                }
-            }
-        }
-
-        // 将展平后的后代数据复制到设备内存
-        int *d_offspring;
-        cudaMalloc(&d_offspring, flatOffspring.size() * sizeof(int));
-        cudaMemcpy(d_offspring, flatOffspring.data(), flatOffspring.size() * sizeof(int), cudaMemcpyHostToDevice);
-
-        // 获取距离矩阵设备内存
-        float *d_distanceMatrix = tsp.transferDistanceMatrixToDevice();
-
-        // 为后代适应度分配设备内存
-        float *d_fitness;
-        cudaMalloc(&d_fitness, totalOffspring * sizeof(float));
-
-        int threads = 256;
-        int blocks = (totalOffspring + threads - 1) / threads;
-        computeFitnessKernel<<<blocks, threads>>>(d_offspring, d_distanceMatrix, d_fitness,
-                                                  tsp.numCities, totalOffspring);
-        cudaDeviceSynchronize();
-
-        // 将后代适应度结果复制回 host
-        std::vector<float> h_fitness(totalOffspring);
-        cudaMemcpy(h_fitness.data(), d_fitness, totalOffspring * sizeof(float), cudaMemcpyDeviceToHost);
-
-        // 更新 offspring 中每个个体的 fitness
-        int offset = 0;
-        for (int island = 0; island < offspring.size(); island++) {
-            for (int j = 0; j < offspring[island].size(); j++) {
-                offspring[island][j].fitness = h_fitness[offset];
-                offset++;
-            }
-        }
-
-        cudaFree(d_offspring);
-        cudaFree(d_distanceMatrix);
-        cudaFree(d_fitness);
-    }
-
-
-    //---------------------------------------------------------------------
-    // 以下各模块占位实现，实际需调用 CUDA 内核实现
-    //---------------------------------------------------------------------
-    ParentPairs selectionCUDA(TSP &tsp) {
-        std::cout << "[CUDA] selection (placeholder)\n";
-        return selectionCPU(tsp);
-    }
-
-    // 假设最大城市数不会超过 256
-#define MAX_CITIES 256
-
-    //---------------------------------------------------------------------
-    // CUDA 内核：对每个父代配对执行顺序交叉（OX）
-    //---------------------------------------------------------------------
+    // -----------------------------------------------------------
+    // 核函数：顺序交叉 (OX) 每个线程处理一对父母
+    // -----------------------------------------------------------
     __global__ void crossoverKernel(const int *d_parentA, const int *d_parentB,
                                     int *d_child1, int *d_child2,
                                     int numPairs, int numCities,
-                                    float crossoverProbability, unsigned long seed) {
+                                    float crossoverProb, unsigned long seed)
+    {
         int pairIdx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (pairIdx < numPairs) {
-            // 初始化每个线程自己的 curand 状态
-            curandState state;
-            curand_init(seed, pairIdx, 0, &state);
+        if (pairIdx >= numPairs) return;
 
-            // 父代指针：每个父代染色体长度为 numCities
-            const int *pA = d_parentA + pairIdx * numCities;
-            const int *pB = d_parentB + pairIdx * numCities;
-            int *c1 = d_child1 + pairIdx * numCities;
-            int *c2 = d_child2 + pairIdx * numCities;
+        // 每个线程独立初始化 curand 状态
+        curandState state;
+        curand_init(seed, pairIdx, 0, &state);
 
-            // 决定是否进行交叉
-            float r = curand_uniform(&state);
-            if (r >= crossoverProbability) {
-                // 不交叉，直接复制父代染色体
-                for (int i = 0; i < numCities; i++) {
-                    c1[i] = pA[i];
-                    c2[i] = pB[i];
-                }
-            } else {
-                // 交叉操作：顺序交叉 (OX)
-                int point1 = curand(&state) % numCities;
-                int point2 = curand(&state) % numCities;
-                if (point1 > point2) {
-                    int tmp = point1;
-                    point1 = point2;
-                    point2 = tmp;
-                }
-                // 使用局部数组存储子代染色体，先全部置为 -1 表示未填充
-                int child1[MAX_CITIES];
-                int child2[MAX_CITIES];
-                for (int i = 0; i < numCities; i++) {
-                    child1[i] = -1;
-                    child2[i] = -1;
-                }
-                // 复制交叉区间：子代1复制父代A，子代2复制父代B
-                for (int i = point1; i <= point2; i++) {
-                    child1[i] = pA[i];
-                    child2[i] = pB[i];
-                }
-                // 填充子代1：从父代B中按顺序填充未复制的基因
-                int currentIndex = (point2 + 1) % numCities;
-                for (int i = 0; i < numCities; i++) {
-                    int candidateIndex = (point2 + 1 + i) % numCities;
-                    int candidate = pB[candidateIndex];
-                    // 检查 candidate 是否已存在于子代1交叉区间内
-                    bool found = false;
-                    for (int j = point1; j <= point2; j++) {
-                        if (child1[j] == candidate) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        child1[currentIndex] = candidate;
-                        currentIndex = (currentIndex + 1) % numCities;
-                    }
-                }
-                // 填充子代2：从父代A中按顺序填充未复制的基因
-                currentIndex = (point2 + 1) % numCities;
-                for (int i = 0; i < numCities; i++) {
-                    int candidateIndex = (point2 + 1 + i) % numCities;
-                    int candidate = pA[candidateIndex];
-                    bool found = false;
-                    for (int j = point1; j <= point2; j++) {
-                        if (child2[j] == candidate) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        child2[currentIndex] = candidate;
-                        currentIndex = (currentIndex + 1) % numCities;
-                    }
-                }
-                // 将生成的子代写入输出
-                for (int i = 0; i < numCities; i++) {
-                    c1[i] = child1[i];
-                    c2[i] = child2[i];
-                }
+        int base = pairIdx * numCities;
+        int *child1 = d_child1 + base;
+        int *child2 = d_child2 + base;
+
+        float r = curand_uniform(&state);
+        if (r >= crossoverProb) {
+            // 不交叉，直接复制父代
+            for (int i = 0; i < numCities; i++) {
+                child1[i] = d_parentA[base + i];
+                child2[i] = d_parentB[base + i];
+            }
+            return;
+        }
+
+        // 初始化子代为-1
+        for (int i = 0; i < numCities; i++) {
+            child1[i] = -1;
+            child2[i] = -1;
+        }
+        // 随机选择两个交叉点
+        int p1 = curand(&state) % numCities;
+        int p2 = curand(&state) % numCities;
+        if (p1 > p2) {
+            int tmp = p1; p1 = p2; p2 = tmp;
+        }
+        // 复制交叉区间
+        for (int i = p1; i <= p2; i++) {
+            child1[i] = d_parentA[base + i];
+            child2[i] = d_parentB[base + i];
+        }
+        // 填充 child1：从父B中按顺序填充
+        int idx = (p2 + 1) % numCities;
+        for (int i = 0; i < numCities; i++) {
+            int pos = (p2 + 1 + i) % numCities;
+            int gene = d_parentB[base + pos];
+            bool found = false;
+            for (int j = p1; j <= p2; j++) {
+                if (child1[j] == gene) { found = true; break; }
+            }
+            if (!found) {
+                child1[idx] = gene;
+                idx = (idx + 1) % numCities;
+            }
+        }
+        // 填充 child2：从父A中按顺序填充
+        idx = (p2 + 1) % numCities;
+        for (int i = 0; i < numCities; i++) {
+            int pos = (p2 + 1 + i) % numCities;
+            int gene = d_parentA[base + pos];
+            bool found = false;
+            for (int j = p1; j <= p2; j++) {
+                if (child2[j] == gene) { found = true; break; }
+            }
+            if (!found) {
+                child2[idx] = gene;
+                idx = (idx + 1) % numCities;
             }
         }
     }
 
-    //---------------------------------------------------------------------
-    // CUDA 版本交叉：对所有父代配对执行顺序交叉，采用个体级并行
-    //---------------------------------------------------------------------
-    Offspring crossoverCUDA(const TSP &tsp, const ParentPairs &parentPairs) {
-        // 1. 将父代配对展平到两个连续数组中
-        int totalPairs = 0;
-        std::vector<int> h_parentA;
-        std::vector<int> h_parentB;
-        std::vector<int> pairsPerIsland; // 保存每个岛的配对数量
-        for (int island = 0; island < parentPairs.size(); island++) {
-            int numPairs = parentPairs[island].size();
-            pairsPerIsland.push_back(numPairs);
-            totalPairs += numPairs;
-            for (int i = 0; i < numPairs; i++) {
-                const Individual &pa = parentPairs[island][i].first;
-                const Individual &pb = parentPairs[island][i].second;
-                for (int j = 0; j < tsp.numCities; j++) {
-                    h_parentA.push_back(pa.chromosome[j]);
-                    h_parentB.push_back(pb.chromosome[j]);
-                }
+    // -----------------------------------------------------------
+    // 核函数：变异，每个线程处理一个个体
+    // -----------------------------------------------------------
+    __global__ void mutationKernel(int *d_offspring, int totalIndividuals, int numCities,
+                                   float mutationProb, unsigned long seed)
+    {
+        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx >= totalIndividuals) return;
+
+        curandState state;
+        curand_init(seed, idx, 0, &state);
+
+        int start = idx * numCities;
+        for (int i = 0; i < numCities; i++) {
+            float r = curand_uniform(&state);
+            if (r < mutationProb) {
+                int j = curand(&state) % numCities;
+                int tmp = d_offspring[start + i];
+                d_offspring[start + i] = d_offspring[start + j];
+                d_offspring[start + j] = tmp;
             }
         }
-        int numGenes = tsp.numCities;
-        int arraySize = totalPairs * numGenes * sizeof(int);
-        // 2. 分配设备内存并复制父代数据
-        int *d_parentA, *d_parentB, *d_child1, *d_child2;
-        cudaMalloc(&d_parentA, arraySize);
-        cudaMalloc(&d_parentB, arraySize);
-        cudaMalloc(&d_child1, arraySize);
-        cudaMalloc(&d_child2, arraySize);
-        cudaMemcpy(d_parentA, h_parentA.data(), arraySize, cudaMemcpyHostToDevice);
-        cudaMemcpy(d_parentB, h_parentB.data(), arraySize, cudaMemcpyHostToDevice);
+    }
 
-        // 3. 启动 CUDA 内核：每个线程处理一对父代
+    // -----------------------------------------------------------
+    // 核函数：Replacement
+    // 每个线程处理一对父母及对应的两个子代，从 {pa, pb, child1, child2} 中选出最优两个
+    // -----------------------------------------------------------
+    __global__ void replacementKernel(
+        int *d_population, float *d_populationFitness,
+        const int *d_parentA, const int *d_parentB,
+        const float *d_parentFitness,
+        const int *d_child1, const int *d_child2,
+        const float *d_childFitness,
+        int numPairs, int numCities)
+    {
+        int pairIdx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (pairIdx >= numPairs) return;
+
+        int base = pairIdx * numCities;
+        // 以下四个数组均长度为 numCities，每个代表一个个体
+        // 依次为：pa, pb, child1, child2
+        // 同时，各个个体的适应度分别存储在对应的输入数组中（每对两个父代对应两个子代）
+        float fits[4] = {
+            d_parentFitness[2 * pairIdx],
+            d_parentFitness[2 * pairIdx + 1],
+            d_childFitness[2 * pairIdx],
+            d_childFitness[2 * pairIdx + 1]
+        };
+        const int* chrom[4] = {
+            d_parentA + base,
+            d_parentB + base,
+            d_child1 + base,
+            d_child2 + base
+        };
+
+        // 找出两个最大适应度的索引
+        int bestIdx = 0, secondIdx = 1;
+        if (fits[secondIdx] > fits[bestIdx]) {
+            int tmp = bestIdx; bestIdx = secondIdx; secondIdx = tmp;
+        }
+        for (int i = 2; i < 4; i++) {
+            if (fits[i] > fits[bestIdx]) {
+                secondIdx = bestIdx;
+                bestIdx = i;
+            } else if (fits[i] > fits[secondIdx]) {
+                secondIdx = i;
+            }
+        }
+        // 用最佳的两个染色体替换种群中对应父代的位置
+        int popOffsetA = pairIdx * 2 * numCities;      // 父代 pa 在 population 中的起始位置
+        int popOffsetB = popOffsetA + numCities;         // 父代 pb 在 population 中的起始位置
+        for (int i = 0; i < numCities; i++) {
+            d_population[popOffsetA + i] = chrom[bestIdx][i];
+            d_population[popOffsetB + i] = chrom[secondIdx][i];
+        }
+        // 更新适应度
+        d_populationFitness[2 * pairIdx] = fits[bestIdx];
+        d_populationFitness[2 * pairIdx + 1] = fits[secondIdx];
+    }
+
+    // -----------------------------------------------------------
+    // selectionCUDA
+    // 使用 CPU 实现并更新 TSP 内展平数据（不另外展平）
+    // -----------------------------------------------------------
+    ParentPairs selectionCUDA(TSP &tsp) {
+        // 采用 CPU 的选择实现，然后更新 TSP.parentAFlat、parentBFlat、parentFitnessFlat
+        ParentPairs pp = selectionCPU(tsp);
+        tsp.parentPairs = pp;
+        int totalPairs = 0;
+        for (int i = 0; i < tsp.numIslands; i++) {
+            totalPairs += pp[i].size();
+        }
+        tsp.parentAFlat.resize(totalPairs * tsp.numCities);
+        tsp.parentBFlat.resize(totalPairs * tsp.numCities);
+        tsp.parentFitnessFlat.resize(2 * totalPairs);
+        int pairIndex = 0;
+        for (int island = 0; island < tsp.numIslands; island++) {
+            for (size_t i = 0; i < pp[island].size(); i++) {
+                const Individual &pa = pp[island][i].first;
+                const Individual &pb = pp[island][i].second;
+                for (int j = 0; j < tsp.numCities; j++) {
+                    tsp.parentAFlat[pairIndex * tsp.numCities + j] = pa.chromosome[j];
+                    tsp.parentBFlat[pairIndex * tsp.numCities + j] = pb.chromosome[j];
+                }
+                tsp.parentFitnessFlat[2 * pairIndex]     = pa.fitness;
+                tsp.parentFitnessFlat[2 * pairIndex + 1] = pb.fitness;
+                pairIndex++;
+            }
+        }
+        return pp;
+    }
+
+    // -----------------------------------------------------------
+    // crossoverCUDA
+    // 使用 TSP.parentAFlat 和 parentBFlat，不再重新展平
+    // -----------------------------------------------------------
+    Offspring crossoverCUDA(TSP &tsp, const ParentPairs &parentPairs) {
+        int totalPairs = 0;
+        for (int i = 0; i < tsp.numIslands; i++) {
+            totalPairs += parentPairs[i].size();
+        }
+        // parentAFlat、parentBFlat 已在 selectionCUDA 中更新到 TSP 内
         int threads = 256;
         int blocks = (totalPairs + threads - 1) / threads;
-        unsigned long seed = 1234; // 可根据需要设置种子
-        crossoverKernel<<<blocks, threads>>>(d_parentA, d_parentB, d_child1, d_child2,
-                                             totalPairs, numGenes, tsp.crossoverProbability, seed);
+        unsigned long seed = time(nullptr);
+        // 启动 crossover kernel
+        crossoverKernel<<<blocks, threads>>>(tsp.d_parentA, tsp.d_parentB, tsp.d_child1, tsp.d_child2,
+                                               totalPairs, tsp.numCities, tsp.crossoverProbability, seed);
         cudaDeviceSynchronize();
-
-        // 4. 拷贝生成的子代数据回 host
-        std::vector<int> h_child1(totalPairs * numGenes);
-        std::vector<int> h_child2(totalPairs * numGenes);
-        cudaMemcpy(h_child1.data(), d_child1, arraySize, cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_child2.data(), d_child2, arraySize, cudaMemcpyDeviceToHost);
-
-        // 释放设备内存
-        cudaFree(d_parentA);
-        cudaFree(d_parentB);
-        cudaFree(d_child1);
-        cudaFree(d_child2);
-
-        // 5. 根据原有岛的划分重构 offspring 结构
+        // 直接将 kernel 结果存入 TSP.offspringFlat（大小为 totalPairs * 2 * numCities）
+        tsp.offspringFlat.resize(totalPairs * 2 * tsp.numCities);
+        cudaMemcpy(tsp.offspringFlat.data(), tsp.d_child1, totalPairs * tsp.numCities * sizeof(int), cudaMemcpyDeviceToHost);
+        cudaMemcpy(tsp.offspringFlat.data() + totalPairs * tsp.numCities, tsp.d_child2,
+                   totalPairs * tsp.numCities * sizeof(int), cudaMemcpyDeviceToHost);
+        // 重建 Offspring 结构（不再额外展平）
         Offspring offspring;
         offspring.resize(tsp.numIslands);
         int pairIndex = 0;
-        for (int island = 0; island < parentPairs.size(); island++) {
-            int numPairs = pairsPerIsland[island];
+        for (int island = 0; island < tsp.numIslands; island++) {
+            int numPairs = parentPairs[island].size();
             for (int i = 0; i < numPairs; i++) {
                 Individual child1, child2;
-                child1.chromosome.resize(numGenes);
-                child2.chromosome.resize(numGenes);
-                for (int j = 0; j < numGenes; j++) {
-                    child1.chromosome[j] = h_child1[pairIndex * numGenes + j];
-                    child2.chromosome[j] = h_child2[pairIndex * numGenes + j];
+                child1.chromosome.resize(tsp.numCities);
+                child2.chromosome.resize(tsp.numCities);
+                for (int j = 0; j < tsp.numCities; j++) {
+                    child1.chromosome[j] = tsp.offspringFlat[pairIndex * tsp.numCities + j];
+                    child2.chromosome[j] = tsp.offspringFlat[(totalPairs + pairIndex) * tsp.numCities + j];
                 }
+                child1.fitness = 0.0f;
+                child2.fitness = 0.0f;
+                child1.islandID = island;
+                child2.islandID = island;
                 offspring[island].push_back(child1);
                 offspring[island].push_back(child2);
                 pairIndex++;
@@ -314,252 +271,139 @@ namespace GA {
         return offspring;
     }
 
-    // CUDA 内核：每个线程处理一个个体的染色体变异
-    __global__ void mutationKernel(int *d_offspring, int totalIndividuals, int numCities,
-                                   float mutationProbability, unsigned long seed) {
-        int ind = blockIdx.x * blockDim.x + threadIdx.x; // 当前线程对应的个体编号
-        if (ind < totalIndividuals) {
-            // 初始化每个线程自己的随机数状态
-            curandState state;
-            curand_init(seed, ind, 0, &state);
-
-            // 计算该个体在展平数组中的起始位置
-            int offset = ind * numCities;
-            // 遍历该个体的所有基因
-            for (int i = 0; i < numCities; i++) {
-                float r = curand_uniform(&state);
-                if (r < mutationProbability) {
-                    // 随机选择一个基因位置进行交换
-                    int j = curand(&state) % numCities;
-                    // 交换 d_offspring[offset+i] 和 d_offspring[offset+j]
-                    int tmp = d_offspring[offset + i];
-                    d_offspring[offset + i] = d_offspring[offset + j];
-                    d_offspring[offset + j] = tmp;
-                }
-            }
+    // -----------------------------------------------------------
+    // mutationCUDA
+    // 使用 TSP.offspringFlat 中已有的展平数据，不在每个函数里重新展平
+    // -----------------------------------------------------------
+    void mutationCUDA(TSP &tsp, Offspring &offspring) {
+        // 假设 TSP.offspringFlat 已由 crossoverCUDA 更新
+        int totalPairs = 0;
+        for (int i = 0; i < tsp.numIslands; i++) {
+            totalPairs += tsp.parentPairs[i].size();
         }
-    }
-
-    void mutationCUDA(const TSP &tsp, Offspring &offspring) {
-        // 计算总后代个体数量
-        int totalOffspring = 0;
-        for (int island = 0; island < offspring.size(); island++) {
-            totalOffspring += offspring[island].size();
-        }
-
-        // 将 offspring 展平到一个连续数组中，每个个体占 tsp.numCities 个整数
-        std::vector<int> flatOffspring;
-        flatOffspring.reserve(totalOffspring * tsp.numCities);
-        for (int island = 0; island < offspring.size(); island++) {
-            for (int j = 0; j < offspring[island].size(); j++) {
-                const Individual &ind = offspring[island][j];
-                // 假定 ind.chromosome 的大小为 tsp.numCities
-                for (int k = 0; k < tsp.numCities; k++) {
-                    flatOffspring.push_back(ind.chromosome[k]);
-                }
-            }
-        }
-
-        int arraySize = totalOffspring * tsp.numCities * sizeof(int);
-        int *d_offspring;
-        cudaMalloc(&d_offspring, arraySize);
-        cudaMemcpy(d_offspring, flatOffspring.data(), arraySize, cudaMemcpyHostToDevice);
-
-        // 启动 CUDA 内核，每个线程处理一个个体
+        int totalOffspring = totalPairs * 2;
+        int totalGenes = tsp.offspringFlat.size(); // = totalOffspring * tsp.numCities
+        // 将 TSP.offspringFlat 拷贝到 device（如果之前没有保持在 device 上）
+        cudaMemcpy(tsp.d_offspring, tsp.offspringFlat.data(), totalGenes * sizeof(int), cudaMemcpyHostToDevice);
         int threads = 256;
         int blocks = (totalOffspring + threads - 1) / threads;
-        unsigned long seed = 1234; // 设定随机种子，可根据需要调整
-        mutationKernel<<<blocks, threads>>>(d_offspring, totalOffspring, tsp.numCities,
-                                            tsp.mutationProbability, seed);
+        unsigned long seed = time(nullptr);
+        mutationKernel<<<blocks, threads>>>(tsp.d_offspring, totalOffspring, tsp.numCities, tsp.mutationProbability, seed);
+        cudaDeviceSynchronize();
+        // 将变异结果拷贝回 TSP.offspringFlat
+        cudaMemcpy(tsp.offspringFlat.data(), tsp.d_offspring, totalGenes * sizeof(int), cudaMemcpyDeviceToHost);
+        // 更新 Offspring 结构：直接写回，不重新展平
+        int offset = 0;
+        for (int island = 0; island < tsp.numIslands; island++) {
+            for (auto &child : offspring[island]) {
+                for (int j = 0; j < tsp.numCities; j++) {
+                    child.chromosome[j] = tsp.offspringFlat[offset * tsp.numCities + j];
+                }
+                offset++;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------
+    // updateOffspringFitnessCUDA
+    // 使用 TSP.offspringFlat 中已有展平数据
+    // -----------------------------------------------------------
+    void updateOffspringFitnessCUDA(TSP &tsp, Offspring &offspring) {
+        int totalPairs = 0;
+        for (int i = 0; i < tsp.numIslands; i++) {
+            totalPairs += tsp.parentPairs[i].size();
+        }
+        int totalOffspring = totalPairs * 2;
+        int totalGenes = tsp.offspringFlat.size();
+        // 直接将 TSP.offspringFlat 拷贝到 device
+        cudaMemcpy(tsp.d_offspring, tsp.offspringFlat.data(), totalGenes * sizeof(int), cudaMemcpyHostToDevice);
+        int threads = 256;
+        int blocks = (totalOffspring + threads - 1) / threads;
+        computeFitnessKernel<<<blocks, threads>>>(tsp.d_offspring, tsp.d_distanceMatrix, tsp.d_offspringFitness, tsp.numCities, totalOffspring);
+        cudaDeviceSynchronize();
+        tsp.offspringFitnessFlat.resize(totalOffspring);
+        cudaMemcpy(tsp.offspringFitnessFlat.data(), tsp.d_offspringFitness, totalOffspring * sizeof(float), cudaMemcpyDeviceToHost);
+        // 更新 Offspring 结构中的 fitness
+        int idx = 0;
+        for (int island = 0; island < tsp.numIslands; island++) {
+            for (auto &child : offspring[island]) {
+                child.fitness = tsp.offspringFitnessFlat[idx++];
+            }
+        }
+    }
+
+    // -----------------------------------------------------------
+    // updatePopulationFitnessCUDA
+    // -----------------------------------------------------------
+    void updatePopulationFitnessCUDA(TSP &tsp) {
+        // 确保 tsp.populationFlat 是最新的（TSP 内由外部调用更新）
+        // 这里直接拷贝 tsp.populationFlat 到 device
+        cudaMemcpy(tsp.d_population, tsp.populationFlat.data(), tsp.populationFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
+        int threads = 256;
+        int blocks = (tsp.popSize + threads - 1) / threads;
+        computeFitnessKernel<<<blocks, threads>>>(tsp.d_population, tsp.d_distanceMatrix, tsp.d_populationFitness, tsp.numCities, tsp.popSize);
+        cudaDeviceSynchronize();
+        std::vector<float> h_fit(tsp.popSize);
+        cudaMemcpy(h_fit.data(), tsp.d_populationFitness, tsp.popSize * sizeof(float), cudaMemcpyDeviceToHost);
+        int idx = 0;
+        for (int island = 0; island < tsp.numIslands; island++) {
+            for (auto &ind : tsp.population[island]) {
+                ind.fitness = h_fit[idx++];
+            }
+        }
+    }
+
+    // -----------------------------------------------------------
+    // replacementCUDA
+    // GPU 实现 replacement，选择 child1, child2, pa, pb 中最好的两个替代原父代
+    // -----------------------------------------------------------
+    void replacementCUDA(TSP &tsp, const ParentPairs &parentPairs, const Offspring &offspring) {
+        int totalPairs = 0;
+        for (int i = 0; i < tsp.numIslands; i++) {
+            totalPairs += parentPairs[i].size();
+        }
+        // 假设 TSP.parentAFlat、parentBFlat 已经更新（由 selectionCUDA 完成）
+        // 并且 TSP.offspringFlat、offspringFitnessFlat 已由 crossoverCUDA 和 updateOffspringFitnessCUDA 更新
+
+        // 拷贝父代与子代数据到 device（这些展平数组已存在于 TSP 对象中）
+        cudaMemcpy(tsp.d_parentA, tsp.parentAFlat.data(), tsp.parentAFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(tsp.d_parentB, tsp.parentBFlat.data(), tsp.parentBFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(tsp.d_parentFitness, tsp.parentFitnessFlat.data(), tsp.parentFitnessFlat.size() * sizeof(float), cudaMemcpyHostToDevice);
+        // 子代：child1 和 child2分别存储在 TSP.offspringFlat 的前后半部分
+        int totalGenesPerChild = totalPairs * tsp.numCities;
+        cudaMemcpy(tsp.d_child1, tsp.offspringFlat.data(), totalGenesPerChild * sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(tsp.d_child2, tsp.offspringFlat.data() + totalGenesPerChild, totalGenesPerChild * sizeof(int), cudaMemcpyHostToDevice);
+        // offspring fitness 已经在 TSP.offspringFitnessFlat 中
+        cudaMemcpy(tsp.d_offspringFitness, tsp.offspringFitnessFlat.data(), tsp.offspringFitnessFlat.size() * sizeof(float), cudaMemcpyHostToDevice);
+
+        int threads = 256;
+        int blocks = (totalPairs + threads - 1) / threads;
+        replacementKernel<<<blocks, threads>>>(tsp.d_population, tsp.d_populationFitness,
+                                                 tsp.d_parentA, tsp.d_parentB, tsp.d_parentFitness,
+                                                 tsp.d_child1, tsp.d_child2, tsp.d_offspringFitness,
+                                                 totalPairs, tsp.numCities);
         cudaDeviceSynchronize();
 
-        // 将变异后的数据拷贝回 host
-        cudaMemcpy(flatOffspring.data(), d_offspring, arraySize, cudaMemcpyDeviceToHost);
+        // 将更新后的种群展平数据从 device 拷贝回 TSP.populationFlat
+        cudaMemcpy(tsp.populationFlat.data(), tsp.d_population, tsp.populationFlat.size() * sizeof(int), cudaMemcpyDeviceToHost);
+        // 同时将更新后的适应度拷贝到 tsp.parentFitnessFlat（用于下一步更新 population 对象）
+        cudaMemcpy(tsp.parentFitnessFlat.data(), tsp.d_populationFitness, tsp.parentFitnessFlat.size() * sizeof(float), cudaMemcpyDeviceToHost);
 
-        // 根据展平数组重新构造 offspring 结构
+        // 更新 TSP.population（假设 TSP.populationFlat 与 population 中的个体顺序一致）
         int offset = 0;
-        for (int island = 0; island < offspring.size(); island++) {
-            for (int j = 0; j < offspring[island].size(); j++) {
-                for (int k = 0; k < tsp.numCities; k++) {
-                    offspring[island][j].chromosome[k] = flatOffspring[offset++];
-                }
-            }
-        }
-        cudaFree(d_offspring);
-    }
-
-    // CUDA内核，每个线程处理一个pair
-    __global__ void replacementKernel(
-        int *d_population, float *d_populationFitness,
-        const int *d_parentChromosomes, const float *d_parentFitness,
-        const int *d_offspringChromosomes, const float *d_offspringFitness,
-        int numPairs, int popCount, int numCities) {
-        int pairIdx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (pairIdx < numPairs) {
-            // 处理父代1与子代1
-            int parent1_idx = 2 * pairIdx;
-            int child1_idx = 2 * pairIdx;
-            if (d_offspringFitness[child1_idx] > d_parentFitness[parent1_idx]) {
-                // 在该岛种群中查找与父代1染色体完全相同的个体
-                for (int j = 0; j < popCount; j++) {
-                    bool match = true;
-                    for (int k = 0; k < numCities; k++) {
-                        if (d_population[j * numCities + k] != d_parentChromosomes[parent1_idx * numCities + k]) {
-                            match = false;
-                            break;
-                        }
-                    }
-                    if (match) {
-                        // 用子代1的数据替换找到的个体
-                        for (int k = 0; k < numCities; k++) {
-                            d_population[j * numCities + k] = d_offspringChromosomes[child1_idx * numCities + k];
-                        }
-                        d_populationFitness[j] = d_offspringFitness[child1_idx];
-                        break;
-                    }
-                }
-            }
-
-            // 处理父代2与子代2
-            int parent2_idx = 2 * pairIdx + 1;
-            int child2_idx = 2 * pairIdx + 1;
-            if (d_offspringFitness[child2_idx] > d_parentFitness[parent2_idx]) {
-                for (int j = 0; j < popCount; j++) {
-                    bool match = true;
-                    for (int k = 0; k < numCities; k++) {
-                        if (d_population[j * numCities + k] != d_parentChromosomes[parent2_idx * numCities + k]) {
-                            match = false;
-                            break;
-                        }
-                    }
-                    if (match) {
-                        for (int k = 0; k < numCities; k++) {
-                            d_population[j * numCities + k] = d_offspringChromosomes[child2_idx * numCities + k];
-                        }
-                        d_populationFitness[j] = d_offspringFitness[child2_idx];
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    // CUDA版本的替换操作，每个线程处理一个pair
-    void replacementCUDA(TSP &tsp, const ParentPairs &parentPairs, const Offspring &offspring) {
-        int numCities = tsp.numCities;
-        // 对每个岛进行处理
+        int fit_idx = 0;
         for (int island = 0; island < tsp.numIslands; island++) {
-            // 当前岛种群中个体数量
-            int popCount = tsp.population[island].size();
-            // 当前岛的pair数
-            int numPairs = parentPairs[island].size();
-
-            // 展平当前岛种群：染色体和fitness
-            std::vector<int> h_population(popCount * numCities);
-            std::vector<float> h_populationFitness(popCount);
-            for (int i = 0; i < popCount; i++) {
-                const Individual &ind = tsp.population[island][i];
-                for (int j = 0; j < numCities; j++) {
-                    h_population[i * numCities + j] = ind.chromosome[j];
+            for (auto &ind : tsp.population[island]) {
+                for (int j = 0; j < tsp.numCities; j++) {
+                    ind.chromosome[j] = tsp.populationFlat[offset + j];
                 }
-                h_populationFitness[i] = ind.fitness;
+                ind.fitness = tsp.parentFitnessFlat[fit_idx++];
+                offset += tsp.numCities;
             }
-
-            // 展平父代配对数据（注意：每个pair中包含两个Individual）
-            std::vector<int> h_parentChromosomes(numPairs * 2 * numCities);
-            std::vector<float> h_parentFitness(numPairs * 2);
-            for (int i = 0; i < numPairs; i++) {
-                // 父代1
-                const Individual &pa = parentPairs[island][i].first;
-                for (int j = 0; j < numCities; j++) {
-                    h_parentChromosomes[(2 * i) * numCities + j] = pa.chromosome[j];
-                }
-                h_parentFitness[2 * i] = pa.fitness;
-                // 父代2
-                const Individual &pb = parentPairs[island][i].second;
-                for (int j = 0; j < numCities; j++) {
-                    h_parentChromosomes[(2 * i + 1) * numCities + j] = pb.chromosome[j];
-                }
-                h_parentFitness[2 * i + 1] = pb.fitness;
-            }
-
-            // 展平后代数据
-            std::vector<int> h_offspringChromosomes(numPairs * 2 * numCities);
-            std::vector<float> h_offspringFitness(numPairs * 2);
-            for (int i = 0; i < numPairs; i++) {
-                // 子代1
-                const Individual &child1 = offspring[island][2 * i];
-                for (int j = 0; j < numCities; j++) {
-                    h_offspringChromosomes[(2 * i) * numCities + j] = child1.chromosome[j];
-                }
-                h_offspringFitness[2 * i] = child1.fitness;
-                // 子代2
-                const Individual &child2 = offspring[island][2 * i + 1];
-                for (int j = 0; j < numCities; j++) {
-                    h_offspringChromosomes[(2 * i + 1) * numCities + j] = child2.chromosome[j];
-                }
-                h_offspringFitness[2 * i + 1] = child2.fitness;
-            }
-
-            // 申请设备内存
-            int *d_population, *d_parentChromosomes, *d_offspringChromosomes;
-            float *d_populationFitness, *d_parentFitness, *d_offspringFitness;
-            size_t popSizeBytes = h_population.size() * sizeof(int);
-            size_t popFitBytes = h_populationFitness.size() * sizeof(float);
-            size_t parentSizeBytes = h_parentChromosomes.size() * sizeof(int);
-            size_t parentFitBytes = h_parentFitness.size() * sizeof(float);
-            size_t offspringSizeBytes = h_offspringChromosomes.size() * sizeof(int);
-            size_t offspringFitBytes = h_offspringFitness.size() * sizeof(float);
-
-            cudaMalloc(&d_population, popSizeBytes);
-            cudaMalloc(&d_populationFitness, popFitBytes);
-            cudaMalloc(&d_parentChromosomes, parentSizeBytes);
-            cudaMalloc(&d_parentFitness, parentFitBytes);
-            cudaMalloc(&d_offspringChromosomes, offspringSizeBytes);
-            cudaMalloc(&d_offspringFitness, offspringFitBytes);
-
-            // 拷贝数据到设备
-            cudaMemcpy(d_population, h_population.data(), popSizeBytes, cudaMemcpyHostToDevice);
-            cudaMemcpy(d_populationFitness, h_populationFitness.data(), popFitBytes, cudaMemcpyHostToDevice);
-            cudaMemcpy(d_parentChromosomes, h_parentChromosomes.data(), parentSizeBytes, cudaMemcpyHostToDevice);
-            cudaMemcpy(d_parentFitness, h_parentFitness.data(), parentFitBytes, cudaMemcpyHostToDevice);
-            cudaMemcpy(d_offspringChromosomes, h_offspringChromosomes.data(), offspringSizeBytes,
-                       cudaMemcpyHostToDevice);
-            cudaMemcpy(d_offspringFitness, h_offspringFitness.data(), offspringFitBytes, cudaMemcpyHostToDevice);
-
-            // 设定核函数执行参数，每个线程处理一个pair
-            int threadsPerBlock = 256;
-            int blocks = (numPairs + threadsPerBlock - 1) / threadsPerBlock;
-            replacementKernel<<<blocks, threadsPerBlock>>>(d_population, d_populationFitness,
-                                                           d_parentChromosomes, d_parentFitness,
-                                                           d_offspringChromosomes, d_offspringFitness,
-                                                           numPairs, popCount, numCities);
-            cudaDeviceSynchronize();
-
-            // 将更新后的种群数据拷回主机
-            cudaMemcpy(h_population.data(), d_population, popSizeBytes, cudaMemcpyDeviceToHost);
-            cudaMemcpy(h_populationFitness.data(), d_populationFitness, popFitBytes, cudaMemcpyDeviceToHost);
-
-            // 更新TSP对象中当前岛的种群
-            for (int i = 0; i < popCount; i++) {
-                for (int j = 0; j < numCities; j++) {
-                    tsp.population[island][i].chromosome[j] = h_population[i * numCities + j];
-                }
-                tsp.population[island][i].fitness = h_populationFitness[i];
-            }
-
-            // 释放设备内存
-            cudaFree(d_population);
-            cudaFree(d_populationFitness);
-            cudaFree(d_parentChromosomes);
-            cudaFree(d_parentFitness);
-            cudaFree(d_offspringChromosomes);
-            cudaFree(d_offspringFitness);
         }
     }
 
     void migrationCUDA(TSP &tsp) {
-        std::cout << "[CUDA] migration (placeholder)\n";
         migrationCPU(tsp);
     }
-} // namespace GA
+}

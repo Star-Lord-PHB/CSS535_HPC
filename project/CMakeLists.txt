@@ -11,8 +11,6 @@ find_package(CUDAToolkit REQUIRED)
 
 add_executable(CSS535_Project
     src/Main.cu
-    src/KernelConfig.cpp
-        src/GAKernel.cu
         src/TSP.cpp
         include/GAInterface.h
         include/GA_CPU.h

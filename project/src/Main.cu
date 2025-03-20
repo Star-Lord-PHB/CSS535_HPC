@@ -9,13 +9,13 @@
 enum class Implementation { CPU, CUDA };
 
 struct GAFunctionSet {
-    GA::ParentPairs (*selection)(TSP &);
-    GA::Offspring (*crossover)(const TSP &, const GA::ParentPairs &);
-    void (*mutation)(const TSP &, GA::Offspring &);
-    void (*replacement)(TSP &, const GA::ParentPairs &, const GA::Offspring &);
+    ParentPairs (*selection)(TSP &);
+    Offspring (*crossover)(TSP &, const ParentPairs &);
+    void (*mutation)(TSP &, Offspring &);
+    void (*replacement)(TSP &, const ParentPairs &, const Offspring &);
     void (*migration)(TSP &);
     void (*updatePopulationFitness)(TSP &);
-    void (*updateOffspringFitness)(TSP &, GA::Offspring &);
+    void (*updateOffspringFitness)(TSP &, Offspring &);
 };
 
 int main() {
@@ -30,7 +30,7 @@ int main() {
     int generations = 500;
 
     // 选择实现版本
-    Implementation impl = Implementation::CUDA; // 或 CPU
+    Implementation impl = Implementation::CUDA; // CUDA 或 CPU
 
     GAFunctionSet gaFuncs;
     if (impl == Implementation::CPU) {
@@ -45,7 +45,7 @@ int main() {
         gaFuncs.selection = GA::selectionCUDA;
         gaFuncs.crossover = GA::crossoverCUDA;
         gaFuncs.mutation = GA::mutationCUDA;
-        gaFuncs.replacement = GA::replacementCPU;
+        gaFuncs.replacement = GA::replacementCUDA;
         gaFuncs.migration = GA::migrationCUDA;
         gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA;
         gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;

@@ -7,22 +7,13 @@
 
 namespace GA {
 
-    // 用于保存每个岛的父代配对，配对的两个 Individual 代表一个父代对
-    typedef std::vector<std::vector<std::pair<Individual, Individual>>> ParentPairs;
-    // 后代集合：按岛存放，每个岛中是若干 Individual 后代
-    typedef std::vector<std::vector<Individual>> Offspring;
-
-    // 各模块接口函数原型
     ParentPairs selection(TSP &tsp);
-    Offspring crossover(const TSP &tsp, const ParentPairs &parentPairs);
-    void mutation(const TSP &tsp, Offspring &offspring);
-    void replacement(TSP &tsp, const ParentPairs &parentPairs, const Offspring &offspring);
-    void migration(TSP &tsp);
-
-    // 更新种群适应度：用于更新父代个体的 fitness
-    void updatePopulationFitness(TSP &tsp);
-    // 更新后代适应度：用于仅更新 offspring 中的 fitness
-    void updateOffspringFitness(TSP &tsp, Offspring &offspring);
+    Offspring  crossover(TSP &tsp, const ParentPairs &parentPairs);
+    void       mutation(TSP &tsp, Offspring &offspring);
+    void       replacement(TSP &tsp, const ParentPairs &parentPairs, const Offspring &offspring);
+    void       migration(TSP &tsp);
+    void       updatePopulationFitness(TSP &tsp);
+    void       updateOffspringFitness(TSP &tsp, Offspring &offspring);
 
 } // namespace GA
 
