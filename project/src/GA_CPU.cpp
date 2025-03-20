@@ -45,7 +45,7 @@ ParentPairs selectionCPU(TSP &tsp) {
     return parentPairs;
 }
 
-// 2. Crossover: 单点交叉
+// 2. Crossover: 顺序交叉
 Offspring crossoverCPU(const TSP &tsp, const ParentPairs &parentPairs) {
     Offspring offspring(tsp.numIslands);
     std::mt19937 rng(std::random_device{}());
