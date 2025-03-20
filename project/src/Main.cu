@@ -1,4 +1,5 @@
 #include <iostream>
+#include <chrono>
 #include "TSP.h"
 #include "GAInterface.h"
 #include "GA_CPU.h"
@@ -19,14 +20,14 @@ struct GAFunctionSet {
 
 int main() {
     // GA 算法参数设置
-    int numCities = 10;
-    int popSize = 20;
-    int mapSize = 100;
-    int numIslands = 2;
+    int numCities = 256;
+    int popSize = 1024;
+    int mapSize = 1000;
+    int numIslands = 64;
     float parentSelectionRate = 0.5f;
     float crossoverProbability = 0.7f;
     float mutationProbability = 0.05f;
-    int generations = 100;
+    int generations = 500;
 
     // 选择实现版本
     Implementation impl = Implementation::CUDA; // 或 CPU
@@ -44,7 +45,7 @@ int main() {
         gaFuncs.selection = GA::selectionCUDA;
         gaFuncs.crossover = GA::crossoverCUDA;
         gaFuncs.mutation = GA::mutationCUDA;
-        gaFuncs.replacement = GA::replacementCUDA;
+        gaFuncs.replacement = GA::replacementCPU;
         gaFuncs.migration = GA::migrationCUDA;
         gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA;
         gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;
@@ -56,6 +57,9 @@ int main() {
 
     // 初始适应度更新：更新种群的 fitness
     gaFuncs.updatePopulationFitness(tsp);
+
+    // 记录迭代开始时间
+    auto startTime = std::chrono::high_resolution_clock::now();
 
     // 迭代 GA 算法
     for (int gen = 0; gen < generations; gen++) {
@@ -85,6 +89,12 @@ int main() {
             std::cout << "  Island " << island << " best fitness: " << bestFit << std::endl;
         }
     }
+
+    // 记录迭代结束时间
+    auto endTime = std::chrono::high_resolution_clock::now();
+    // 计算迭代部分的持续时间，单位为秒
+    std::chrono::duration<double> duration = endTime - startTime;
+    std::cout << "Total GA iterations time: " << duration.count() << " seconds." << std::endl;
 
     return 0;
 }
