@@ -29,7 +29,7 @@ int main() {
     int generations = 100;
 
     // 选择实现版本
-    Implementation impl = Implementation::CPU; // 或 CPU
+    Implementation impl = Implementation::CUDA; // 或 CPU
 
     GAFunctionSet gaFuncs;
     if (impl == Implementation::CPU) {

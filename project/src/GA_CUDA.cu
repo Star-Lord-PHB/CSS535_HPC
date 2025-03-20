@@ -144,10 +144,174 @@ ParentPairs selectionCUDA(TSP &tsp) {
     std::cout << "[CUDA] selection (placeholder)\n";
     return selectionCPU(tsp);
 }
+    // 假设最大城市数不会超过 256
+#define MAX_CITIES 256
 
+//---------------------------------------------------------------------
+// CUDA 内核：对每个父代配对执行顺序交叉（OX）
+//---------------------------------------------------------------------
+__global__ void crossoverKernel(const int *d_parentA, const int *d_parentB,
+                                  int *d_child1, int *d_child2,
+                                  int numPairs, int numCities,
+                                  float crossoverProbability, unsigned long seed) {
+    int pairIdx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (pairIdx < numPairs) {
+        // 初始化每个线程自己的 curand 状态
+        curandState state;
+        curand_init(seed, pairIdx, 0, &state);
+
+        // 父代指针：每个父代染色体长度为 numCities
+        const int *pA = d_parentA + pairIdx * numCities;
+        const int *pB = d_parentB + pairIdx * numCities;
+        int *c1 = d_child1 + pairIdx * numCities;
+        int *c2 = d_child2 + pairIdx * numCities;
+
+        // 决定是否进行交叉
+        float r = curand_uniform(&state);
+        if (r >= crossoverProbability) {
+            // 不交叉，直接复制父代染色体
+            for (int i = 0; i < numCities; i++) {
+                c1[i] = pA[i];
+                c2[i] = pB[i];
+            }
+        } else {
+            // 交叉操作：顺序交叉 (OX)
+            int point1 = curand(&state) % numCities;
+            int point2 = curand(&state) % numCities;
+            if (point1 > point2) {
+                int tmp = point1;
+                point1 = point2;
+                point2 = tmp;
+            }
+            // 使用局部数组存储子代染色体，先全部置为 -1 表示未填充
+            int child1[MAX_CITIES];
+            int child2[MAX_CITIES];
+            for (int i = 0; i < numCities; i++) {
+                child1[i] = -1;
+                child2[i] = -1;
+            }
+            // 复制交叉区间：子代1复制父代A，子代2复制父代B
+            for (int i = point1; i <= point2; i++) {
+                child1[i] = pA[i];
+                child2[i] = pB[i];
+            }
+            // 填充子代1：从父代B中按顺序填充未复制的基因
+            int currentIndex = (point2 + 1) % numCities;
+            for (int i = 0; i < numCities; i++) {
+                int candidateIndex = (point2 + 1 + i) % numCities;
+                int candidate = pB[candidateIndex];
+                // 检查 candidate 是否已存在于子代1交叉区间内
+                bool found = false;
+                for (int j = point1; j <= point2; j++) {
+                    if (child1[j] == candidate) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    child1[currentIndex] = candidate;
+                    currentIndex = (currentIndex + 1) % numCities;
+                }
+            }
+            // 填充子代2：从父代A中按顺序填充未复制的基因
+            currentIndex = (point2 + 1) % numCities;
+            for (int i = 0; i < numCities; i++) {
+                int candidateIndex = (point2 + 1 + i) % numCities;
+                int candidate = pA[candidateIndex];
+                bool found = false;
+                for (int j = point1; j <= point2; j++) {
+                    if (child2[j] == candidate) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    child2[currentIndex] = candidate;
+                    currentIndex = (currentIndex + 1) % numCities;
+                }
+            }
+            // 将生成的子代写入输出
+            for (int i = 0; i < numCities; i++) {
+                c1[i] = child1[i];
+                c2[i] = child2[i];
+            }
+        }
+    }
+}
+
+//---------------------------------------------------------------------
+// CUDA 版本交叉：对所有父代配对执行顺序交叉，采用个体级并行
+//---------------------------------------------------------------------
 Offspring crossoverCUDA(const TSP &tsp, const ParentPairs &parentPairs) {
-    std::cout << "[CUDA] crossover (placeholder)\n";
-    return crossoverCPU(tsp, parentPairs);
+    // 1. 将父代配对展平到两个连续数组中
+    int totalPairs = 0;
+    std::vector<int> h_parentA;
+    std::vector<int> h_parentB;
+    std::vector<int> pairsPerIsland; // 保存每个岛的配对数量
+    for (int island = 0; island < parentPairs.size(); island++) {
+        int numPairs = parentPairs[island].size();
+        pairsPerIsland.push_back(numPairs);
+        totalPairs += numPairs;
+        for (int i = 0; i < numPairs; i++) {
+            const Individual &pa = parentPairs[island][i].first;
+            const Individual &pb = parentPairs[island][i].second;
+            for (int j = 0; j < tsp.numCities; j++) {
+                h_parentA.push_back(pa.chromosome[j]);
+                h_parentB.push_back(pb.chromosome[j]);
+            }
+        }
+    }
+    int numGenes = tsp.numCities;
+    int arraySize = totalPairs * numGenes * sizeof(int);
+    // 2. 分配设备内存并复制父代数据
+    int *d_parentA, *d_parentB, *d_child1, *d_child2;
+    cudaMalloc(&d_parentA, arraySize);
+    cudaMalloc(&d_parentB, arraySize);
+    cudaMalloc(&d_child1, arraySize);
+    cudaMalloc(&d_child2, arraySize);
+    cudaMemcpy(d_parentA, h_parentA.data(), arraySize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_parentB, h_parentB.data(), arraySize, cudaMemcpyHostToDevice);
+
+    // 3. 启动 CUDA 内核：每个线程处理一对父代
+    int threads = 256;
+    int blocks = (totalPairs + threads - 1) / threads;
+    unsigned long seed = 1234; // 可根据需要设置种子
+    crossoverKernel<<<blocks, threads>>>(d_parentA, d_parentB, d_child1, d_child2,
+                                           totalPairs, numGenes, tsp.crossoverProbability, seed);
+    cudaDeviceSynchronize();
+
+    // 4. 拷贝生成的子代数据回 host
+    std::vector<int> h_child1(totalPairs * numGenes);
+    std::vector<int> h_child2(totalPairs * numGenes);
+    cudaMemcpy(h_child1.data(), d_child1, arraySize, cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_child2.data(), d_child2, arraySize, cudaMemcpyDeviceToHost);
+
+    // 释放设备内存
+    cudaFree(d_parentA);
+    cudaFree(d_parentB);
+    cudaFree(d_child1);
+    cudaFree(d_child2);
+
+    // 5. 根据原有岛的划分重构 offspring 结构
+    Offspring offspring;
+    offspring.resize(tsp.numIslands);
+    int pairIndex = 0;
+    for (int island = 0; island < parentPairs.size(); island++) {
+        int numPairs = pairsPerIsland[island];
+        for (int i = 0; i < numPairs; i++) {
+            Individual child1, child2;
+            child1.chromosome.resize(numGenes);
+            child2.chromosome.resize(numGenes);
+            for (int j = 0; j < numGenes; j++) {
+                child1.chromosome[j] = h_child1[pairIndex * numGenes + j];
+                child2.chromosome[j] = h_child2[pairIndex * numGenes + j];
+            }
+            offspring[island].push_back(child1);
+            offspring[island].push_back(child2);
+            pairIndex++;
+        }
+    }
+    return offspring;
 }
 
 void mutationCUDA(const TSP &tsp, Offspring &offspring) {

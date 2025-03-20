@@ -6,6 +6,8 @@
 
 namespace GA {
 
+
+
 // 计算适应度：定义为 1 / (路径总距离)
 float computeFitnessCPU(const Individual &ind, const TSP &tsp) {
     float totalDistance = 0.0f;
