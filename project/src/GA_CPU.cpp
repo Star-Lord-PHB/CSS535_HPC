@@ -39,6 +39,7 @@ void updateOffspringFitnessCPU(TSP &tsp, Offspring &offspring) {
 }
 
 // 1. Selection: 在同一岛内随机配对
+//目前是全选，后面加上选择率超参数//目前是不排序版本
 ParentPairs selectionCPU(TSP &tsp) {
     ParentPairs parentPairs(tsp.numIslands);
     std::mt19937 rng(std::random_device{}());
@@ -145,6 +146,7 @@ void replacementCPU(TSP &tsp, const ParentPairs &parentPairs, const Offspring &o
             const Individual &pb = parentPairs[island][i].second;
             const Individual &child1 = offspring[island][2*i];
             const Individual &child2 = offspring[island][2*i+1];
+            //考虑改成四个里挑两个最好的
             if (child1.fitness > pa.fitness) {
                 for (auto &ind : tsp.population[island]) {
                     if (ind.chromosome == pa.chromosome) {
