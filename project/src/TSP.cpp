@@ -147,3 +147,20 @@ void TSP::copyDistanceMatrixHostToDevice() {
     cudaMemcpy(d_distanceMatrix, distanceMatrixFlat.data(),
                distanceMatrixFlat.size() * sizeof(float), cudaMemcpyHostToDevice);
 }
+
+//析构函数
+TSP::~TSP() {
+    // 释放 GPU 缓冲区
+    cudaFree(d_distanceMatrix);
+    cudaFree(d_population);
+    cudaFree(d_populationFitness);
+    cudaFree(d_parentA);
+    cudaFree(d_parentB);
+    cudaFree(d_parentFitness);
+    cudaFree(d_child1);
+    cudaFree(d_child2);
+    cudaFree(d_offspring);
+    cudaFree(d_offspringFitness);
+    cudaFree(d_parentChromosomes);
+    cudaFree(d_offspringChromosomes);
+}

@@ -100,6 +100,8 @@ public:
     // 用于 GPU 的拷贝接口，如果要更新 GPU 的 population
     void copyPopulationHostToDevice();
     void copyDistanceMatrixHostToDevice();
+
+    ~TSP();
 };
 
 #endif
