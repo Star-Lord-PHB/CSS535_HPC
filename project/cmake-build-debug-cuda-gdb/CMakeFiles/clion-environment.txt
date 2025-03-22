@@ -1,0 +1,4 @@
+ToolSet: 1.0 (local)Ninja: 1.12.1@/home/star_lord_phb/.cache/JetBrains/RemoteDev/dist/8883b3744bbaf_CLion-251.23774.112/bin/ninja/linux/x64/ninja
+Options: 
+
+Options:-DCMAKE_MAKE_PROGRAM=/home/star_lord_phb/.cache/JetBrains/RemoteDev/dist/8883b3744bbaf_CLion-251.23774.112/bin/ninja/linux/x64/ninja

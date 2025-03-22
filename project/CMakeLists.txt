@@ -12,8 +12,17 @@ find_package(CUDAToolkit REQUIRED)
 add_executable(CSS535_Project
     src/Main.cu
     src/KernelConfig.cpp
-        src/GAKernel.cu
+    src/GA_oneThreadPerGene.cu
+        include/Array.hpp
 )
+
+#if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+#    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -G -g")
+#endif()
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -G -g")
+
 
 target_include_directories(CSS535_Project PUBLIC ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 target_include_directories(CSS535_Project PUBLIC ${CMAKE_SOURCE_DIR}/include)

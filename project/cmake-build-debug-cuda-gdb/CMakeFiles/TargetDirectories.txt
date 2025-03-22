@@ -1,0 +1,3 @@
+/home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/cmake-build-debug-cuda-gdb/CMakeFiles/CSS535_Project.dir
+/home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/cmake-build-debug-cuda-gdb/CMakeFiles/edit_cache.dir
+/home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/cmake-build-debug-cuda-gdb/CMakeFiles/rebuild_cache.dir

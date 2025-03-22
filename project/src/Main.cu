@@ -1,9 +1,10 @@
 #include <iostream>
+#include "GA_oneThreadPerGene.hpp"
 
 
 int main() {
 
-    std::cout << "Hello, world!" << std::endl;
+    ga_one_thread_per_gene_test();
 
     return 0;
 
