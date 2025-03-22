@@ -2,6 +2,12 @@
 #define TSP_H
 
 #include <vector>
+// 定义一个时间记录结构体
+struct TimeRecord {
+    double computeTime; // 核心计算（CPU 逻辑）时间，不包括数据同步或传输时间
+    double kernelTime;  // CUDA 内核执行时间（仅适用于采用 CUDA 的步骤）
+    double totalTime;   // 该环节总时间（包括数据传输、同步等）
+};
 
 // City structure: represents a city with an ID and coordinates.
 struct City {
@@ -32,6 +38,7 @@ public:
     float crossoverProbability;// Crossover probability
     float mutationProbability; // Mutation probability
 
+
     // ------------------
     // Original Data Structures
     // ------------------
@@ -44,6 +51,17 @@ public:
     // ------------------
     ParentPairs parentPairs;       // Parent pairs (grouped by island)
     Offspring   offsprings;        // Offspring (grouped by island)
+
+    // ----------------------
+    // 各环节计时记录
+    // ----------------------
+    TimeRecord selectionTime;
+    TimeRecord crossoverTime;
+    TimeRecord mutationTime;
+    TimeRecord replacementTime;
+    TimeRecord migrationTime;
+    TimeRecord updatePopulationFitnessTime;
+    TimeRecord updateOffspringFitnessTime;
 
     // To facilitate sharing of flattened data between GPU and CPU implementations,
     // additional flattened arrays are maintained:

@@ -33,11 +33,11 @@ struct GAFunctionSet {
     void (*updateOffspringFitness)(TSP &);
 };
 
-// 结果结构体，用于保存一次 GA 运行的结果和超参数
+// 扩展的 GAResult 结构体，增加各阶段计时信息
 struct GAResult {
     std::string strategyName;
     double bestFitness;
-    double totalTime; // 以秒为单位
+    double totalTime; // 主循环迭代总时间
     // 超参数
     int numCities;
     int popSize;
@@ -47,6 +47,14 @@ struct GAResult {
     float crossoverProbability;
     float mutationProbability;
     int generations;
+    // 各阶段时间（单位秒）
+    double sel_compute, sel_kernel, sel_total;
+    double cross_compute, cross_kernel, cross_total;
+    double mut_compute, mut_kernel, mut_total;
+    double repl_compute, repl_kernel, repl_total;
+    double mig_compute, mig_kernel, mig_total;
+    double updPop_compute, updPop_kernel, updPop_total;
+    double updOff_compute, updOff_kernel, updOff_total;
 };
 
 // 获取策略名称
@@ -66,7 +74,7 @@ std::string getStrategyName(Implementation impl) {
     }
 }
 
-// 封装单个策略的运行过程，返回运行结果
+// 封装单个策略的运行过程，返回 GAResult
 GAResult run_strategy(Implementation impl,
                       int numCities,
                       int popSize,
@@ -98,7 +106,7 @@ GAResult run_strategy(Implementation impl,
             gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;
             break;
         case Implementation::CUDA_SELECTION:
-            gaFuncs.selection = GA::selectionCUDA;   // 采用 CUDA 版本
+            gaFuncs.selection = GA::selectionCUDA;
             gaFuncs.crossover = GA::crossoverCPU;
             gaFuncs.mutation = GA::mutationCPU;
             gaFuncs.replacement = GA::replacementCPU;
@@ -108,7 +116,7 @@ GAResult run_strategy(Implementation impl,
             break;
         case Implementation::CUDA_CROSS:
             gaFuncs.selection = GA::selectionCPU;
-            gaFuncs.crossover = GA::crossoverCUDA;     // 采用 CUDA 版本
+            gaFuncs.crossover = GA::crossoverCUDA;
             gaFuncs.mutation = GA::mutationCPU;
             gaFuncs.replacement = GA::replacementCPU;
             gaFuncs.migration = GA::migrationCPU;
@@ -118,7 +126,7 @@ GAResult run_strategy(Implementation impl,
         case Implementation::CUDA_MUTATION:
             gaFuncs.selection = GA::selectionCPU;
             gaFuncs.crossover = GA::crossoverCPU;
-            gaFuncs.mutation = GA::mutationCUDA;       // 采用 CUDA 版本
+            gaFuncs.mutation = GA::mutationCUDA;
             gaFuncs.replacement = GA::replacementCPU;
             gaFuncs.migration = GA::migrationCPU;
             gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCPU;
@@ -128,7 +136,7 @@ GAResult run_strategy(Implementation impl,
             gaFuncs.selection = GA::selectionCPU;
             gaFuncs.crossover = GA::crossoverCPU;
             gaFuncs.mutation = GA::mutationCPU;
-            gaFuncs.replacement = GA::replacementCUDA;   // 采用 CUDA 版本
+            gaFuncs.replacement = GA::replacementCUDA;
             gaFuncs.migration = GA::migrationCPU;
             gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCPU;
             gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCPU;
@@ -138,7 +146,7 @@ GAResult run_strategy(Implementation impl,
             gaFuncs.crossover = GA::crossoverCPU;
             gaFuncs.mutation = GA::mutationCPU;
             gaFuncs.replacement = GA::replacementCPU;
-            gaFuncs.migration = GA::migrationCUDA;       // 采用 CUDA 版本
+            gaFuncs.migration = GA::migrationCUDA;
             gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCPU;
             gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCPU;
             break;
@@ -148,7 +156,7 @@ GAResult run_strategy(Implementation impl,
             gaFuncs.mutation = GA::mutationCPU;
             gaFuncs.replacement = GA::replacementCPU;
             gaFuncs.migration = GA::migrationCPU;
-            gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA; // 采用 CUDA 版本
+            gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA;
             gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCPU;
             break;
         case Implementation::CUDA_UPDATE_OFFSPRING:
@@ -158,7 +166,7 @@ GAResult run_strategy(Implementation impl,
             gaFuncs.replacement = GA::replacementCPU;
             gaFuncs.migration = GA::migrationCPU;
             gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCPU;
-            gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;   // 采用 CUDA 版本
+            gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;
             break;
         case Implementation::CUDA_UPDATE_ALL_FITNESS:
             gaFuncs.selection = GA::selectionCPU;
@@ -166,8 +174,8 @@ GAResult run_strategy(Implementation impl,
             gaFuncs.mutation = GA::mutationCPU;
             gaFuncs.replacement = GA::replacementCPU;
             gaFuncs.migration = GA::migrationCPU;
-            gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA; // 采用 CUDA 版本
-            gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;   // 采用 CUDA 版本
+            gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA;
+            gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;
             break;
         default:
             gaFuncs.selection = GA::selectionCPU;
@@ -180,25 +188,22 @@ GAResult run_strategy(Implementation impl,
             break;
     }
 
-    // 初始化 TSP 问题实例（构造函数中会生成城市、种群和距离矩阵）
+    // 创建 TSP 实例（构造函数中会初始化城市、种群和距离矩阵，同时可能初始化 GPU 数据及计时变量）
     TSP tsp(numCities, popSize, mapSize, numIslands,
             parentSelectionRate, crossoverProbability, mutationProbability);
 
-    // 初始适应度更新：计算整个种群的适应度
+    // 初始适应度更新
     gaFuncs.updatePopulationFitness(tsp);
 
-    // 记录开始时间
+    // 记录 GA 迭代开始时间（包括所有阶段的执行时间）
     auto startTime = std::chrono::high_resolution_clock::now();
 
-    // GA 主循环，每一代进行各步骤的迭代
+    // GA 主循环
     for (int gen = 0; gen < generations; gen++) {
         gaFuncs.selection(tsp);
         gaFuncs.crossover(tsp);
-        // std::cout<<"crossover done"<<std::endl;
         gaFuncs.mutation(tsp);
-        // std::cout<<"mutation done"<<std::endl;
         gaFuncs.updateOffspringFitness(tsp);
-        // std::cout<<"update offspring fitness done"<<std::endl;
         gaFuncs.replacement(tsp);
         gaFuncs.migration(tsp);
         gaFuncs.updatePopulationFitness(tsp);
@@ -217,6 +222,7 @@ GAResult run_strategy(Implementation impl,
         }
     }
 
+    // 构造结果，包括各阶段的计时数据
     GAResult result;
     result.strategyName = getStrategyName(impl);
     result.bestFitness = bestFitness;
@@ -229,6 +235,35 @@ GAResult run_strategy(Implementation impl,
     result.crossoverProbability = crossoverProbability;
     result.mutationProbability = mutationProbability;
     result.generations = generations;
+    // 将各阶段的计时数据复制到 result 中
+    result.sel_compute = tsp.selectionTime.computeTime;
+    result.sel_kernel  = tsp.selectionTime.kernelTime;
+    result.sel_total   = tsp.selectionTime.totalTime;
+
+    result.cross_compute = tsp.crossoverTime.computeTime;
+    result.cross_kernel  = tsp.crossoverTime.kernelTime;
+    result.cross_total   = tsp.crossoverTime.totalTime;
+
+    result.mut_compute = tsp.mutationTime.computeTime;
+    result.mut_kernel  = tsp.mutationTime.kernelTime;
+    result.mut_total   = tsp.mutationTime.totalTime;
+
+    result.repl_compute = tsp.replacementTime.computeTime;
+    result.repl_kernel  = tsp.replacementTime.kernelTime;
+    result.repl_total   = tsp.replacementTime.totalTime;
+
+    result.mig_compute = tsp.migrationTime.computeTime;
+    result.mig_kernel  = tsp.migrationTime.kernelTime;
+    result.mig_total   = tsp.migrationTime.totalTime;
+
+    result.updPop_compute = tsp.updatePopulationFitnessTime.computeTime;
+    result.updPop_kernel  = tsp.updatePopulationFitnessTime.kernelTime;
+    result.updPop_total   = tsp.updatePopulationFitnessTime.totalTime;
+
+    result.updOff_compute = tsp.updateOffspringFitnessTime.computeTime;
+    result.updOff_kernel  = tsp.updateOffspringFitnessTime.kernelTime;
+    result.updOff_total   = tsp.updateOffspringFitnessTime.totalTime;
+
     return result;
 }
 
@@ -241,7 +276,7 @@ int main() {
     float parentSelectionRate = 0.5f;
     float crossoverProbability = 0.7f;
     float mutationProbability = 0.05f;
-    int generations = 10;
+    int generations = 500;
 
     // 策略列表
     std::vector<Implementation> strategies = {
@@ -258,8 +293,15 @@ int main() {
     };
 
     // 打开 CSV 文件写入数据
-    std::ofstream outfile("data.csv");
-    outfile << "strategy,best_fitness,total_time,numCities,popSize,mapSize,numIslands,parentSelectionRate,crossoverProbability,mutationProbability,generations\n";
+    std::ofstream outfile("D://CSS535//CSS535_HPC//project//data.csv");
+    outfile << "strategy,best_fitness,total_time,numCities,popSize,mapSize,numIslands,parentSelectionRate,crossoverProbability,mutationProbability,generations,"
+            << "sel_compute,sel_kernel,sel_total,"
+            << "cross_compute,cross_kernel,cross_total,"
+            << "mut_compute,mut_kernel,mut_total,"
+            << "repl_compute,repl_kernel,repl_total,"
+            << "mig_compute,mig_kernel,mig_total,"
+            << "updPop_compute,updPop_kernel,updPop_total,"
+            << "updOff_compute,updOff_kernel,updOff_total\n";
 
     // 遍历每个策略，运行 GA 并写入结果
     for (auto impl : strategies) {
@@ -275,15 +317,20 @@ int main() {
                 << res.parentSelectionRate << ","
                 << res.crossoverProbability << ","
                 << res.mutationProbability << ","
-                << res.generations << "\n";
+                << res.generations << ","
+                << res.sel_compute << "," << res.sel_kernel << "," << res.sel_total << ","
+                << res.cross_compute << "," << res.cross_kernel << "," << res.cross_total << ","
+                << res.mut_compute << "," << res.mut_kernel << "," << res.mut_total << ","
+                << res.repl_compute << "," << res.repl_kernel << "," << res.repl_total << ","
+                << res.mig_compute << "," << res.mig_kernel << "," << res.mig_total << ","
+                << res.updPop_compute << "," << res.updPop_kernel << "," << res.updPop_total << ","
+                << res.updOff_compute << "," << res.updOff_kernel << "," << res.updOff_total
+                << "\n";
         std::cout << "Finished strategy " << res.strategyName
                   << ": best fitness = " << res.bestFitness
                   << ", total time = " << res.totalTime << " seconds."
                   << std::endl;
     }
-
-    // GAResult res = run_strategy(strategies[3], numCities, popSize, mapSize, numIslands,
-    //                                 parentSelectionRate, crossoverProbability, mutationProbability, 500);
 
     outfile.close();
     return 0;
