@@ -3,104 +3,109 @@
 
 #include <vector>
 
-// 城市结构体
+// City structure: represents a city with an ID and coordinates.
 struct City {
     int id;
     float x;
     float y;
 };
 
-// 个体结构体：基于城市顺序的排列
+// Individual structure: represents a tour (a permutation of city indices)
+// and its associated fitness value and island identifier.
 struct Individual {
-    std::vector<int> chromosome;
-    float fitness;
-    int islandID; // 标记所属岛屿
+    std::vector<int> chromosome;  // Order of cities visited
+    float fitness;                // Fitness value (e.g., 1 / total distance)
+    int islandID;                 // Identifier of the island (subpopulation) this individual belongs to
 };
 
-// 在 TSP 中放入 ParentPairs 和 Offsprings 类型
-// 保持与原来 GAInterface 中的别名一致
+// Define ParentPairs and Offspring types to be consistent with the original GAInterface aliases.
 typedef std::vector<std::vector<std::pair<Individual, Individual>>> ParentPairs;
 typedef std::vector<std::vector<Individual>> Offspring;
 
 class TSP {
 public:
-    int numCities;             // 城市数量
-    int popSize;               // 总种群大小（所有岛的个体总数）
-    int mapSize;               // 地图尺寸（例如 100 表示 0~100 的范围）
-    int numIslands;            // 岛屿数量
-    float parentSelectionRate; // 父代选择百分比（可选参数）
-    float crossoverProbability;// 交叉概率
-    float mutationProbability; // 变异概率
+    int numCities;             // Number of cities
+    int popSize;               // Total population size (all individuals across islands)
+    int mapSize;               // Map size (e.g., if 100, cities are in the range [0, 100])
+    int numIslands;            // Number of islands (subpopulations)
+    float parentSelectionRate; // Parent selection rate (optional parameter)
+    float crossoverProbability;// Crossover probability
+    float mutationProbability; // Mutation probability
 
     // ------------------
-    // 原有数据结构
+    // Original Data Structures
     // ------------------
-    std::vector<City> cities;                         // 城市坐标
-    std::vector<std::vector<Individual>> population;  // 按岛存储的种群
-    std::vector<std::vector<float>> distanceMatrix;    // 二维距离矩阵
+    std::vector<City> cities;                         // Coordinates of the cities
+    std::vector<std::vector<Individual>> population;  // Population divided by islands
+    std::vector<std::vector<float>> distanceMatrix;   // 2D matrix representing distances between cities
 
     // ------------------
-    // 新增：GA相关中间结果
+    // Additional GA Intermediate Data
     // ------------------
-    ParentPairs parentPairs;       // 按岛存储的父母对
-    Offspring   offsprings;        // 按岛存储的后代
+    ParentPairs parentPairs;       // Parent pairs (grouped by island)
+    Offspring   offsprings;        // Offspring (grouped by island)
 
-    // 为了方便 GPU/CPU 共享展平数据，额外存储以下：
-    // 1) 种群展平数据
+    // To facilitate sharing of flattened data between GPU and CPU implementations,
+    // additional flattened arrays are maintained:
+    // 1) Flattened population data (all individuals in a single continuous array)
     std::vector<int> populationFlat;
-    // 2) 距离矩阵展平数据 (row-major)
+    // 2) Flattened distance matrix data (stored in row-major order)
     std::vector<float> distanceMatrixFlat;
-    // 3) 父母对（parentPairs）展平后 A、B 染色体
+    // 3) Flattened parent pair data: chromosomes for parent A and parent B, along with their fitness values.
     std::vector<int> parentAFlat;
     std::vector<int> parentBFlat;
-    std::vector<float> parentFitnessFlat; // 父代的适应度展平
-    // 4) offspring（后代）展平后染色体及适应度
+    std::vector<float> parentFitnessFlat; // Flattened fitness values for parent individuals
+    // 4) Flattened offspring data: chromosomes and fitness values for offspring.
     std::vector<int> offspringFlat;
     std::vector<float> offspringFitnessFlat;
 
-    // 每个岛上的配对数（用于 kernel 中确定并行大小）
+    // Number of parent pairs per island (used in GPU kernels to determine parallel workload)
     std::vector<int> parentPairCount;
 
     // ------------------
-    // GPU 相关 device 端指针（如需持久化分配）
+    // GPU Device Pointers (for persistent allocation, if needed)
     // ------------------
     float *d_distanceMatrix = nullptr;
     int   *d_population     = nullptr;
     float *d_populationFitness = nullptr;
 
-    // 父母对 / 子代 用于 CUDA kernel
+    // Device pointers for parent pairs / children used in CUDA kernels
     int   *d_parentA = nullptr;
     int   *d_parentB = nullptr;
     float *d_parentFitness = nullptr;
     int   *d_child1 = nullptr;
     int   *d_child2 = nullptr;
 
-    // Offspring 用于 mutation/crossover
+    // Device pointers for offspring used in mutation/crossover operations
     int   *d_offspring = nullptr;
     float *d_offspringFitness = nullptr;
 
-    // Replacement 用到的合并父母和子代
+    // Device pointers used for replacement operations (combining parent and offspring data)
     int   *d_parentChromosomes = nullptr;
     int   *d_offspringChromosomes = nullptr;
 
-    // 构造函数：传入城市数、种群大小、地图尺寸、岛屿数、选择率、交叉概率和变异概率
+    // Constructor: initializes the TSP instance with the given parameters:
+    // number of cities, population size, map size, number of islands,
+    // parent selection rate, crossover probability, and mutation probability.
     TSP(int _numCities, int _popSize, int _mapSize, int _numIslands,
         float _parentSelectionRate, float _crossoverProbability, float _mutationProbability);
 
-    // 初始化城市、种群、距离矩阵
+    // Initialization functions for cities, population, and distance matrix.
     void initCities();
     void initPopulation();
     void computeDistanceMatrix();
 
-    // 生成并拷贝到 GPU 的辅助函数
+    // Functions to flatten the population and distance matrix to one-dimensional arrays
+    // and to allocate GPU buffers using cudaMalloc.
     void flattenPopulationToHost();
     void flattenDistanceMatrixToHost();
-    void allocateGPUBuffers(); // 在此统一 cudaMalloc
+    void allocateGPUBuffers();
 
-    // 用于 GPU 的拷贝接口，如果要更新 GPU 的 population
+    // Functions to copy flattened data from host to GPU, if the population is updated.
     void copyPopulationHostToDevice();
     void copyDistanceMatrixHostToDevice();
 
+    // Destructor: releases all allocated GPU memory.
     ~TSP();
 };
 

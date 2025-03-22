@@ -4,12 +4,12 @@
 #include "GAInterface.h"
 #include "GA_CPU.h"
 #include "GA_CUDA.h"
-#include "GA_oneThreadPerGene.hpp"
+#include "GA_oneThreadPerGene.hpp" // Additional GA variant (if needed)
 
-// 枚举用于选择实现版本
+// Enum to choose implementation version
 enum class Implementation { CPU, CUDA };
 
-
+// Function set structure to hold GA function pointers
 struct GAFunctionSet {
     ParentPairs (*selection)(TSP &);
     Offspring (*crossover)(TSP &, const ParentPairs &);
@@ -20,21 +20,21 @@ struct GAFunctionSet {
     void (*updateOffspringFitness)(TSP &, Offspring &);
 };
 
-
 int main() {
-    // GA 算法参数设置
-    int numCities = 256;
-    int popSize = 1024;
-    int mapSize = 1000;
-    int numIslands = 64;
-    float parentSelectionRate = 0.5f;
-    float crossoverProbability = 0.7f;
-    float mutationProbability = 0.05f;
-    int generations = 500;
+    // GA algorithm parameters
+    int numCities = 256;              // Number of cities
+    int popSize = 1024;               // Total population size (across all islands)
+    int mapSize = 1000;               // Size of the map (e.g., cities will have coordinates in range 0 to mapSize)
+    int numIslands = 64;              // Number of islands (subpopulations)
+    float parentSelectionRate = 0.5f; // Parent selection rate (optional parameter)
+    float crossoverProbability = 0.7f;// Crossover probability
+    float mutationProbability = 0.05f; // Mutation probability
+    int generations = 500;            // Number of generations to run
 
-    // 选择实现版本
-    Implementation impl = Implementation::CUDA; // CUDA 或 CPU
+    // Choose implementation version: CUDA or CPU
+    Implementation impl = Implementation::CUDA; // Change to Implementation::CPU to use CPU version
 
+    // Set function pointers based on the chosen implementation
     GAFunctionSet gaFuncs;
     if (impl == Implementation::CPU) {
         gaFuncs.selection = GA::selectionCPU;
@@ -54,51 +54,54 @@ int main() {
         gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;
     }
 
-    // 初始化 TSP 问题（构造函数会生成城市、种群和距离矩阵）
+    // Initialize TSP problem instance (constructor generates cities, population, and distance matrix)
     TSP tsp(numCities, popSize, mapSize, numIslands,
             parentSelectionRate, crossoverProbability, mutationProbability);
 
-    // 初始适应度更新：更新种群的 fitness
+    // Initial fitness update: compute fitness for the entire population
     gaFuncs.updatePopulationFitness(tsp);
 
-    // 记录迭代开始时间
+    // Record start time for GA iterations
     auto startTime = std::chrono::high_resolution_clock::now();
 
-    // 迭代 GA 算法
+    // Main GA loop over generations
     for (int gen = 0; gen < generations; gen++) {
+        // Selection: pair parents within each island
         auto parentPairs = gaFuncs.selection(tsp);
+        // Crossover: generate offspring from parent pairs
         auto offspring = gaFuncs.crossover(tsp, parentPairs);
+        // Mutation: apply mutation to the offspring
         gaFuncs.mutation(tsp, offspring);
 
-        // 更新 offspring 的适应度：只计算新生成的子代
+        // Update fitness for the newly generated offspring only
         gaFuncs.updateOffspringFitness(tsp, offspring);
 
-        // 用 offspring 替换种群中较差的父代
+        // Replacement: replace poorer parents with the better individuals chosen from parents and offspring
         gaFuncs.replacement(tsp, parentPairs, offspring);
 
-        // 岛间迁移
+        // Migration: exchange individuals among islands (if applicable)
         gaFuncs.migration(tsp);
 
-        // 替换后更新整个种群的适应度
+        // Update the fitness for the entire population after replacement and migration
         gaFuncs.updatePopulationFitness(tsp);
 
-        std::cout << "Generation " << gen << " complete.\n";
-        for (int island = 0; island < tsp.numIslands; island++) {
-            float bestFit = -1.0f;
-            for (const auto &ind : tsp.population[island]) {
-                if (ind.fitness > bestFit)
-                    bestFit = ind.fitness;
-            }
-            // std::cout << "  Island " << island << " best fitness: " << bestFit << std::endl;
-        }
+        std::cout << "Generation " << gen << " complete." << std::endl;
+        // Optionally, print the best fitness on each island
+        // for (int island = 0; island < tsp.numIslands; island++) {
+        //     float bestFit = -1.0f;
+        //     for (const auto &ind : tsp.population[island]) {
+        //         if (ind.fitness > bestFit)
+        //             bestFit = ind.fitness;
+        //     }
+        //     std::cout << "  Island " << island << " best fitness: " << bestFit << std::endl;
+        // }
     }
 
-    // 记录迭代结束时间
+    // Record end time for GA iterations
     auto endTime = std::chrono::high_resolution_clock::now();
-    // 计算迭代部分的持续时间，单位为秒
+    // Compute the total duration of GA iterations in seconds
     std::chrono::duration<double> duration = endTime - startTime;
     std::cout << "Total GA iterations time: " << duration.count() << " seconds." << std::endl;
 
     return 0;
-
 }
