@@ -136,7 +136,7 @@ namespace GA {
         const float *d_parentFitness,
         const int *d_child1, const int *d_child2,
         const float *d_childFitness,
-        int numPairs, int numCities)
+        int numPairs, int numCities, int totalPairs)
     {
         int pairIdx = blockIdx.x * blockDim.x + threadIdx.x;
         if (pairIdx >= numPairs) return;
@@ -145,8 +145,8 @@ namespace GA {
         float fits[4] = {
             d_parentFitness[2 * pairIdx],
             d_parentFitness[2 * pairIdx + 1],
-            d_childFitness[2 * pairIdx],
-            d_childFitness[2 * pairIdx + 1]
+            d_childFitness[pairIdx],
+            d_childFitness[totalPairs + pairIdx]
         };
         const int* chrom[4] = {
             d_parentA + base,
@@ -358,7 +358,7 @@ namespace GA {
         replacementKernel<<<blocks, threads>>>(tsp.d_population, tsp.d_populationFitness,
                                                  tsp.d_parentA, tsp.d_parentB, tsp.d_parentFitness,
                                                  tsp.d_child1, tsp.d_child2, tsp.d_offspringFitness,
-                                                 totalPairs, tsp.numCities);
+                                                 totalPairs, tsp.numCities, totalPairs);
         cudaDeviceSynchronize();
 
         // Copy the updated flattened population data from device back to host.

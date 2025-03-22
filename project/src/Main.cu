@@ -33,7 +33,7 @@ int main() {
     int generations = 500;            // Number of generations to run
 
     // Choose implementation version: CUDA or CPU
-    Implementation impl = Implementation::CUDA; // Change to Implementation::CPU to use CPU version
+    Implementation impl = Implementation::CPU; // Change to Implementation::CPU to use CPU version
 
     // Set function pointers based on the chosen implementation
     GAFunctionSet gaFuncs;
@@ -49,7 +49,7 @@ int main() {
         gaFuncs.selection = GA::selectionCUDA;
         gaFuncs.crossover = GA::crossoverCUDA;
         gaFuncs.mutation = GA::mutationCUDA;
-        gaFuncs.replacement = GA::replacementCPU;
+        gaFuncs.replacement = GA::replacementCUDA;
         gaFuncs.migration = GA::migrationCUDA;
         gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA;
         gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;
