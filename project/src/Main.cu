@@ -5,9 +5,12 @@
 #include "GA_CPU.h"
 #include "GA_CUDA.h"
 #include "GA_oneThreadPerGene.hpp"
+#include  <limits>
+
+using namespace std::chrono;
 
 // 枚举用于选择实现版本
-enum class Implementation { CPU, CUDA };
+enum class Implementation { CPU, CUDA_perIndividual, CUDA_perGene };
 
 
 struct GAFunctionSet {
@@ -21,42 +24,7 @@ struct GAFunctionSet {
 };
 
 
-int main() {
-    // GA 算法参数设置
-    int numCities = 256;
-    int popSize = 1024;
-    int mapSize = 1000;
-    int numIslands = 64;
-    float parentSelectionRate = 0.5f;
-    float crossoverProbability = 0.7f;
-    float mutationProbability = 0.05f;
-    int generations = 500;
-
-    // 选择实现版本
-    Implementation impl = Implementation::CUDA; // CUDA 或 CPU
-
-    GAFunctionSet gaFuncs;
-    if (impl == Implementation::CPU) {
-        gaFuncs.selection = GA::selectionCPU;
-        gaFuncs.crossover = GA::crossoverCPU;
-        gaFuncs.mutation = GA::mutationCPU;
-        gaFuncs.replacement = GA::replacementCPU;
-        gaFuncs.migration = GA::migrationCPU;
-        gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCPU;
-        gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCPU;
-    } else { // Implementation::CUDA
-        gaFuncs.selection = GA::selectionCUDA;
-        gaFuncs.crossover = GA::crossoverCUDA;
-        gaFuncs.mutation = GA::mutationCUDA;
-        gaFuncs.replacement = GA::replacementCUDA;
-        gaFuncs.migration = GA::migrationCUDA;
-        gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA;
-        gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;
-    }
-
-    // 初始化 TSP 问题（构造函数会生成城市、种群和距离矩阵）
-    TSP tsp(numCities, popSize, mapSize, numIslands,
-            parentSelectionRate, crossoverProbability, mutationProbability);
+void runOneIndividualPerThread(const GAFunctionSet& gaFuncs, TSP& tsp, const int generations) {
 
     // 初始适应度更新：更新种群的 fitness
     gaFuncs.updatePopulationFitness(tsp);
@@ -98,6 +66,100 @@ int main() {
     // 计算迭代部分的持续时间，单位为秒
     std::chrono::duration<double> duration = endTime - startTime;
     std::cout << "Total GA iterations time: " << duration.count() << " seconds." << std::endl;
+
+}
+
+
+void runOneGenePerThread(TSP& tsp, const int generations) {
+
+    auto const solution = new Array3D<int>(tsp.numIslands, tsp.popSize / tsp.numIslands, tsp.numCities + 1);
+    auto const distanceMat = new Array2D<float>(tsp.numCities, tsp.numCities);
+    distanceMat->fill(tsp.distanceMatrixFlat);
+
+    auto calculationTime = milliseconds();
+    auto totalTime = milliseconds();
+
+    ga_one_thread_per_gene(
+        *solution,
+        *distanceMat,
+        generations, tsp.crossoverProbability, tsp.mutationProbability,
+        &calculationTime,
+        &totalTime
+    );
+
+    unsigned bestIslandId = 0;
+    unsigned bestIndividualId = 0;
+    float bestFitness = INFINITY;
+    for (unsigned islandId = 0; islandId < solution->xSize(); islandId++) {
+        for (unsigned individualId = 0; individualId < solution->ySize(); individualId++) {
+            const auto fitness = *reinterpret_cast<float*>(&solution->at(islandId, individualId, tsp.numCities));
+            if (fitness < bestFitness) {
+                bestIslandId = islandId;
+                bestIndividualId = individualId;
+                bestFitness = fitness;
+            }
+        }
+    }
+
+    const auto bestIndividual = std::vector(
+        &solution->at(bestIslandId, bestIndividualId, 0),
+        &solution->at(bestIslandId, bestIndividualId, tsp.numCities - 1)
+    );
+
+    std::cout << "One Gene Per Thread (CUDA) Result:" << std::endl;
+    std::cout << "Time Total: " << (calculationTime / 1000).count() << " seconds" << std::endl;
+    std::cout << "Best Fitness: " << bestFitness << std::endl;
+    std::cout << "Best Individual: ";
+    for (const auto& gene : bestIndividual) {
+        std::cout << gene << " ";
+    }
+    std::cout << std::endl;
+
+    delete solution;
+
+}
+
+
+int main() {
+    // GA 算法参数设置
+    int numCities = 256;
+    int popSize = 1024;
+    int mapSize = 1000;
+    int numIslands = 64;
+    float parentSelectionRate = 0.5f;
+    float crossoverProbability = 0.7f;
+    float mutationProbability = 0.05f;
+    int generations = 500;
+
+    // 选择实现版本
+    Implementation impl = Implementation::CUDA_perGene; // CUDA 或 CPU
+
+    // 初始化 TSP 问题（构造函数会生成城市、种群和距离矩阵）
+    TSP tsp(numCities, popSize, mapSize, numIslands,
+            parentSelectionRate, crossoverProbability, mutationProbability);
+
+    auto gaFuncs = GAFunctionSet();
+    if (impl == Implementation::CPU) {
+        gaFuncs.selection = GA::selectionCPU;
+        gaFuncs.crossover = GA::crossoverCPU;
+        gaFuncs.mutation = GA::mutationCPU;
+        gaFuncs.replacement = GA::replacementCPU;
+        gaFuncs.migration = GA::migrationCPU;
+        gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCPU;
+        gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCPU;
+        runOneIndividualPerThread(gaFuncs, tsp, generations);
+    } else if (impl == Implementation::CUDA_perIndividual) { // Implementation::CUDA
+        gaFuncs.selection = GA::selectionCUDA;
+        gaFuncs.crossover = GA::crossoverCUDA;
+        gaFuncs.mutation = GA::mutationCUDA;
+        gaFuncs.replacement = GA::replacementCUDA;
+        gaFuncs.migration = GA::migrationCUDA;
+        gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA;
+        gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;
+        runOneIndividualPerThread(gaFuncs, tsp, generations);
+    } else if (impl == Implementation::CUDA_perGene) {
+        runOneGenePerThread(tsp, generations);
+    }
 
     return 0;
 

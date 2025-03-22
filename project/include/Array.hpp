@@ -44,6 +44,10 @@ public:
         }
     }
 
+    void fill(const std::vector<T>& vec) {
+        std::copy(vec.begin(), vec.end(), _data.data());
+    }
+
     Array2D(unsigned long _rowCount, unsigned long _colCount) noexcept: _rowCount(_rowCount), _data(_rowCount * _colCount) {}
     Array2D(std::initializer_list<std::initializer_list<T>> initList): _rowCount(initList.size()) {
         if (initList.size() == 0) {

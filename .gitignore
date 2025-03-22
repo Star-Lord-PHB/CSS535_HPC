@@ -1,9 +1,9 @@
-project/build
-project/.idea
-project/.vscode
+project/build/
+project/.idea/
+project/.vscode/
 project/cmake-build-debug/
-project/cmake-build-debug-cuda-gdb
-labN/.vscode
-labN/bin
-labN/obj
+project/cmake-build-debug-cuda-gdb/
+labN/.vscode/
+labN/bin/
+labN/obj/
 labN/report

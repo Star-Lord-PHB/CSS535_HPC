@@ -26,8 +26,8 @@ add_executable(CSS535_Project
 #    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 #    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -G -g")
 #endif()
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -G -g")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+#set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -G -g")
 
 
 target_include_directories(CSS535_Project PUBLIC ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})

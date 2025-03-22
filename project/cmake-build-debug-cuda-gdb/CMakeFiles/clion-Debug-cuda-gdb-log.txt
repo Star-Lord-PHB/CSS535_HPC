@@ -1,4 +1,0 @@
-/home/star_lord_phb/.cache/JetBrains/RemoteDev/dist/8883b3744bbaf_CLion-251.23774.112/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MAKE_PROGRAM=/home/star_lord_phb/.cache/JetBrains/RemoteDev/dist/8883b3744bbaf_CLion-251.23774.112/bin/ninja/linux/x64/ninja -G Ninja -S /home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project -B /home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/cmake-build-debug-cuda-gdb
--- Configuring done (0.1s)
--- Generating done (0.2s)
--- Build files have been written to: /home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/cmake-build-debug-cuda-gdb
