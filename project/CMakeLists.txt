@@ -11,9 +11,15 @@ find_package(CUDAToolkit REQUIRED)
 
 add_executable(CSS535_Project
     src/Main.cu
-    src/KernelConfig.cpp
+    src/TSP.cpp
+    include/GAInterface.h
+    include/GA_CPU.h
+    include/GA_CUDA.h
+    src/GA_CPU.cpp
+    src/GA_CUDA.cu
+    include/TSP.h
     src/GA_oneThreadPerGene.cu
-        include/Array.hpp
+    include/Array.hpp
 )
 
 #if (CMAKE_BUILD_TYPE STREQUAL "Debug")

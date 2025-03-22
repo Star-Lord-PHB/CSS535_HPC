@@ -1,10 +1,103 @@
 #include <iostream>
+#include <chrono>
+#include "TSP.h"
+#include "GAInterface.h"
+#include "GA_CPU.h"
+#include "GA_CUDA.h"
 #include "GA_oneThreadPerGene.hpp"
+
+// 枚举用于选择实现版本
+enum class Implementation { CPU, CUDA };
+
+
+struct GAFunctionSet {
+    ParentPairs (*selection)(TSP &);
+    Offspring (*crossover)(TSP &, const ParentPairs &);
+    void (*mutation)(TSP &, Offspring &);
+    void (*replacement)(TSP &, const ParentPairs &, const Offspring &);
+    void (*migration)(TSP &);
+    void (*updatePopulationFitness)(TSP &);
+    void (*updateOffspringFitness)(TSP &, Offspring &);
+};
 
 
 int main() {
+    // GA 算法参数设置
+    int numCities = 256;
+    int popSize = 1024;
+    int mapSize = 1000;
+    int numIslands = 64;
+    float parentSelectionRate = 0.5f;
+    float crossoverProbability = 0.7f;
+    float mutationProbability = 0.05f;
+    int generations = 500;
 
-    ga_one_thread_per_gene_test();
+    // 选择实现版本
+    Implementation impl = Implementation::CUDA; // CUDA 或 CPU
+
+    GAFunctionSet gaFuncs;
+    if (impl == Implementation::CPU) {
+        gaFuncs.selection = GA::selectionCPU;
+        gaFuncs.crossover = GA::crossoverCPU;
+        gaFuncs.mutation = GA::mutationCPU;
+        gaFuncs.replacement = GA::replacementCPU;
+        gaFuncs.migration = GA::migrationCPU;
+        gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCPU;
+        gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCPU;
+    } else { // Implementation::CUDA
+        gaFuncs.selection = GA::selectionCUDA;
+        gaFuncs.crossover = GA::crossoverCUDA;
+        gaFuncs.mutation = GA::mutationCUDA;
+        gaFuncs.replacement = GA::replacementCUDA;
+        gaFuncs.migration = GA::migrationCUDA;
+        gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA;
+        gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;
+    }
+
+    // 初始化 TSP 问题（构造函数会生成城市、种群和距离矩阵）
+    TSP tsp(numCities, popSize, mapSize, numIslands,
+            parentSelectionRate, crossoverProbability, mutationProbability);
+
+    // 初始适应度更新：更新种群的 fitness
+    gaFuncs.updatePopulationFitness(tsp);
+
+    // 记录迭代开始时间
+    auto startTime = std::chrono::high_resolution_clock::now();
+
+    // 迭代 GA 算法
+    for (int gen = 0; gen < generations; gen++) {
+        auto parentPairs = gaFuncs.selection(tsp);
+        auto offspring = gaFuncs.crossover(tsp, parentPairs);
+        gaFuncs.mutation(tsp, offspring);
+
+        // 更新 offspring 的适应度：只计算新生成的子代
+        gaFuncs.updateOffspringFitness(tsp, offspring);
+
+        // 用 offspring 替换种群中较差的父代
+        gaFuncs.replacement(tsp, parentPairs, offspring);
+
+        // 岛间迁移
+        gaFuncs.migration(tsp);
+
+        // 替换后更新整个种群的适应度
+        gaFuncs.updatePopulationFitness(tsp);
+
+        std::cout << "Generation " << gen << " complete.\n";
+        for (int island = 0; island < tsp.numIslands; island++) {
+            float bestFit = -1.0f;
+            for (const auto &ind : tsp.population[island]) {
+                if (ind.fitness > bestFit)
+                    bestFit = ind.fitness;
+            }
+            // std::cout << "  Island " << island << " best fitness: " << bestFit << std::endl;
+        }
+    }
+
+    // 记录迭代结束时间
+    auto endTime = std::chrono::high_resolution_clock::now();
+    // 计算迭代部分的持续时间，单位为秒
+    std::chrono::duration<double> duration = endTime - startTime;
+    std::cout << "Total GA iterations time: " << duration.count() << " seconds." << std::endl;
 
     return 0;
 

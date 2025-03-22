@@ -56,9 +56,23 @@ build CMakeFiles/CSS535_Project.dir/src/Main.cu.o: CUDA_COMPILER__CSS535_Project
   OBJECT_DIR = CMakeFiles/CSS535_Project.dir
   OBJECT_FILE_DIR = CMakeFiles/CSS535_Project.dir/src
 
-build CMakeFiles/CSS535_Project.dir/src/KernelConfig.cpp.o: CXX_COMPILER__CSS535_Project_unscanned_Debug /home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/src/KernelConfig.cpp || cmake_object_order_depends_target_CSS535_Project
-  DEP_FILE = CMakeFiles/CSS535_Project.dir/src/KernelConfig.cpp.o.d
+build CMakeFiles/CSS535_Project.dir/src/TSP.cpp.o: CXX_COMPILER__CSS535_Project_unscanned_Debug /home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/src/TSP.cpp || cmake_object_order_depends_target_CSS535_Project
+  DEP_FILE = CMakeFiles/CSS535_Project.dir/src/TSP.cpp.o.d
   FLAGS = -g -g -std=gnu++17 -fdiagnostics-color=always
+  INCLUDES = -I/home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/include -isystem /usr/local/cuda-12.6/targets/x86_64-linux/include
+  OBJECT_DIR = CMakeFiles/CSS535_Project.dir
+  OBJECT_FILE_DIR = CMakeFiles/CSS535_Project.dir/src
+
+build CMakeFiles/CSS535_Project.dir/src/GA_CPU.cpp.o: CXX_COMPILER__CSS535_Project_unscanned_Debug /home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/src/GA_CPU.cpp || cmake_object_order_depends_target_CSS535_Project
+  DEP_FILE = CMakeFiles/CSS535_Project.dir/src/GA_CPU.cpp.o.d
+  FLAGS = -g -g -std=gnu++17 -fdiagnostics-color=always
+  INCLUDES = -I/home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/include -isystem /usr/local/cuda-12.6/targets/x86_64-linux/include
+  OBJECT_DIR = CMakeFiles/CSS535_Project.dir
+  OBJECT_FILE_DIR = CMakeFiles/CSS535_Project.dir/src
+
+build CMakeFiles/CSS535_Project.dir/src/GA_CUDA.cu.o: CUDA_COMPILER__CSS535_Project_unscanned_Debug /home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/src/GA_CUDA.cu || cmake_object_order_depends_target_CSS535_Project
+  DEP_FILE = CMakeFiles/CSS535_Project.dir/src/GA_CUDA.cu.o.d
+  FLAGS = -G -g -g -std=c++17 "--generate-code=arch=compute_75,code=[compute_75,sm_75]"
   INCLUDES = -I/home/d/SynologyDrive/UWB/Y1-winter/high-performance-computing/team_shared/project/include -isystem /usr/local/cuda-12.6/targets/x86_64-linux/include
   OBJECT_DIR = CMakeFiles/CSS535_Project.dir
   OBJECT_FILE_DIR = CMakeFiles/CSS535_Project.dir/src
@@ -78,7 +92,7 @@ build CMakeFiles/CSS535_Project.dir/src/GA_oneThreadPerGene.cu.o: CUDA_COMPILER_
 #############################################
 # Link the executable CSS535_Project
 
-build CSS535_Project: CXX_EXECUTABLE_LINKER__CSS535_Project_Debug CMakeFiles/CSS535_Project.dir/src/Main.cu.o CMakeFiles/CSS535_Project.dir/src/KernelConfig.cpp.o CMakeFiles/CSS535_Project.dir/src/GA_oneThreadPerGene.cu.o | /usr/local/cuda-12.6/targets/x86_64-linux/lib/libcudart.so /usr/local/cuda-12.6/targets/x86_64-linux/lib/libcurand.so /usr/lib/x86_64-linux-gnu/librt.a
+build CSS535_Project: CXX_EXECUTABLE_LINKER__CSS535_Project_Debug CMakeFiles/CSS535_Project.dir/src/Main.cu.o CMakeFiles/CSS535_Project.dir/src/TSP.cpp.o CMakeFiles/CSS535_Project.dir/src/GA_CPU.cpp.o CMakeFiles/CSS535_Project.dir/src/GA_CUDA.cu.o CMakeFiles/CSS535_Project.dir/src/GA_oneThreadPerGene.cu.o | /usr/local/cuda-12.6/targets/x86_64-linux/lib/libcudart.so /usr/local/cuda-12.6/targets/x86_64-linux/lib/libcurand.so /usr/lib/x86_64-linux-gnu/librt.a
   FLAGS = -g -g
   LINK_LIBRARIES = -Wl,-rpath,/usr/local/cuda-12.6/targets/x86_64-linux/lib  /usr/local/cuda-12.6/targets/x86_64-linux/lib/libcudart.so  /usr/local/cuda-12.6/targets/x86_64-linux/lib/libcurand.so  -ldl  /usr/lib/x86_64-linux-gnu/librt.a  -lcudadevrt  -lcudart_static  -lrt  -lpthread  -ldl
   LINK_PATH = -L/usr/local/cuda-12.6/targets/x86_64-linux/lib/stubs   -L/usr/local/cuda-12.6/targets/x86_64-linux/lib
