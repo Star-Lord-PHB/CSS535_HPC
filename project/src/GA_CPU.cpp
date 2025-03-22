@@ -14,8 +14,8 @@ namespace GA {
     using namespace std::chrono;
 
     // ---------------------------------------------------------------------
-    // 计算单个个体适应度（CPU版）
-    // 适应度 = 1/(总路径距离)
+    // Compute the fitness for a single individual (CPU version)
+    // Fitness = 1 / (total tour distance)
     // ---------------------------------------------------------------------
     float computeFitnessCPU(const Individual &ind, const TSP &tsp) {
         float totalDistance = 0.0f;
@@ -24,13 +24,13 @@ namespace GA {
             int city2 = ind.chromosome[i + 1];
             totalDistance += tsp.distanceMatrix[city1][city2];
         }
-        // 返回起点的距离
+        // Add the distance from the last city back to the first city
         totalDistance += tsp.distanceMatrix[ind.chromosome[tsp.numCities - 1]][ind.chromosome[0]];
         return (totalDistance <= 0.0f) ? 0.0f : 1.0f / totalDistance;
     }
 
     // ---------------------------------------------------------------------
-    // 同步更新父代展平数据（不计入计时）
+    // Synchronize the flattened parent data (not counted in timing)
     // ---------------------------------------------------------------------
     void syncParentFlatten(TSP &tsp) {
         int totalPairs = 0;
@@ -58,7 +58,7 @@ namespace GA {
     }
 
     // ---------------------------------------------------------------------
-    // 同步更新子代展平数据（不计入计时）
+    // Synchronize the flattened offspring data (not counted in timing)
     // ---------------------------------------------------------------------
     void syncOffspringFlatten(TSP &tsp) {
         int totalOffspring = 0;
@@ -68,8 +68,8 @@ namespace GA {
         tsp.offspringFlat.resize(totalOffspring * tsp.numCities);
         tsp.offspringFitnessFlat.resize(totalOffspring);
 
-        int offset = 0; // 在 offspringFlat 中的起始索引
-        int childIndex = 0; // 子代计数
+        int offset = 0;      // Starting index in offspringFlat
+        int childIndex = 0;  // Offspring counter
         for (int island = 0; island < tsp.numIslands; island++) {
             for (size_t i = 0; i < tsp.offsprings[island].size(); i++) {
                 const Individual &child = tsp.offsprings[island][i];
@@ -85,11 +85,12 @@ namespace GA {
 
     // ---------------------------------------------------------------------
     // 1) Selection (CPU)
-    // 记录核心逻辑时间（不包含 syncParentFlatten 这部分）
+    // Record core logic time (excluding syncParentFlatten)
     // ---------------------------------------------------------------------
     void selectionCPU(TSP &tsp) {
         auto t0 = high_resolution_clock::now();
 
+        // Clear and resize parent pairs per island
         tsp.parentPairs.clear();
         tsp.parentPairs.resize(tsp.numIslands);
 
@@ -101,6 +102,7 @@ namespace GA {
             for (int i = 0; i < numPairs; i++) {
                 tsp.parentPairs[island].push_back({ islandPop[2 * i], islandPop[2 * i + 1] });
             }
+            // If odd number of individuals, pair the last one with itself
             if (islandPop.size() % 2 == 1) {
                 tsp.parentPairs[island].push_back({ islandPop.back(), islandPop.back() });
             }
@@ -111,10 +113,10 @@ namespace GA {
         }
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
-        // 记录核心逻辑时间，不包含同步时间
+        // Core compute time (excluding synchronization)
         tsp.selectionTime.computeTime += coreTime;
-        tsp.selectionTime.kernelTime += 0; // CPU无内核调用
-        // 同步部分另行测量，不计入 computeTime
+        tsp.selectionTime.kernelTime += 0; // No kernel calls on CPU
+        // Synchronization part (not included in computeTime)
         auto t_sync0 = high_resolution_clock::now();
         syncParentFlatten(tsp);
         auto t_sync1 = high_resolution_clock::now();
@@ -124,7 +126,7 @@ namespace GA {
 
     // ---------------------------------------------------------------------
     // 2) Crossover (CPU)
-    // 记录核心逻辑时间（不包含 syncOffspringFlatten 这部分）
+    // Record core logic time (excluding syncOffspringFlatten)
     // ---------------------------------------------------------------------
     void crossoverCPU(TSP &tsp) {
         auto t0 = high_resolution_clock::now();
@@ -181,8 +183,8 @@ namespace GA {
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
         tsp.crossoverTime.computeTime += coreTime;
-        tsp.crossoverTime.kernelTime += 0;
-        // 同步部分：不计入 coreTime
+        tsp.crossoverTime.kernelTime += 0; // CPU only
+        // Sync part (not counted in computeTime)
         auto t_sync0 = high_resolution_clock::now();
         syncOffspringFlatten(tsp);
         auto t_sync1 = high_resolution_clock::now();
@@ -192,7 +194,7 @@ namespace GA {
 
     // ---------------------------------------------------------------------
     // 3) Mutation (CPU)
-    // 记录核心逻辑时间（不包含 syncOffspringFlatten 这部分）
+    // Record core logic time (excluding syncOffspringFlatten)
     // ---------------------------------------------------------------------
     void mutationCPU(TSP &tsp) {
         auto t0 = high_resolution_clock::now();
@@ -214,7 +216,7 @@ namespace GA {
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
         tsp.mutationTime.computeTime += coreTime;
-        tsp.mutationTime.kernelTime += 0;
+        tsp.mutationTime.kernelTime += 0; // CPU only
         auto t_sync0 = high_resolution_clock::now();
         syncOffspringFlatten(tsp);
         auto t_sync1 = high_resolution_clock::now();
@@ -224,7 +226,7 @@ namespace GA {
 
     // ---------------------------------------------------------------------
     // 4) Replacement (CPU)
-    // 记录核心逻辑时间（不包含 flattenPopulationToHost 这部分）
+    // Record core logic time (excluding flattenPopulationToHost)
     // ---------------------------------------------------------------------
     void replacementCPU(TSP &tsp) {
         auto t0 = high_resolution_clock::now();
@@ -253,7 +255,8 @@ namespace GA {
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
         tsp.replacementTime.computeTime += coreTime;
-        tsp.replacementTime.kernelTime += 0;
+        tsp.replacementTime.kernelTime += 0; // CPU only
+        // Sync part: flattenPopulationToHost (not included in computeTime)
         auto t_sync0 = high_resolution_clock::now();
         tsp.flattenPopulationToHost();
         auto t_sync1 = high_resolution_clock::now();
@@ -263,7 +266,7 @@ namespace GA {
 
     // ---------------------------------------------------------------------
     // 5) Migration (CPU)
-    // 记录核心逻辑时间（不包含 flattenPopulationToHost 这部分）
+    // Record core logic time (excluding flattenPopulationToHost)
     // ---------------------------------------------------------------------
     void migrationCPU(TSP &tsp) {
         auto t0 = high_resolution_clock::now();
@@ -297,7 +300,7 @@ namespace GA {
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
         tsp.migrationTime.computeTime += coreTime;
-        tsp.migrationTime.kernelTime += 0;
+        tsp.migrationTime.kernelTime += 0; // CPU only
         auto t_sync0 = high_resolution_clock::now();
         tsp.flattenPopulationToHost();
         auto t_sync1 = high_resolution_clock::now();
@@ -307,7 +310,7 @@ namespace GA {
 
     // ---------------------------------------------------------------------
     // 6) Update Population Fitness (CPU)
-    // 记录核心逻辑时间（不包含 flattenPopulationToHost 这部分）
+    // Record core logic time (excluding flattenPopulationToHost)
     // ---------------------------------------------------------------------
     void updatePopulationFitnessCPU(TSP &tsp) {
         auto t0 = high_resolution_clock::now();
@@ -319,7 +322,7 @@ namespace GA {
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
         tsp.updatePopulationFitnessTime.computeTime += coreTime;
-        tsp.updatePopulationFitnessTime.kernelTime += 0;
+        tsp.updatePopulationFitnessTime.kernelTime += 0; // CPU only
         auto t_sync0 = high_resolution_clock::now();
         tsp.flattenPopulationToHost();
         auto t_sync1 = high_resolution_clock::now();
@@ -329,7 +332,7 @@ namespace GA {
 
     // ---------------------------------------------------------------------
     // 7) Update Offspring Fitness (CPU)
-    // 记录核心逻辑时间（不包含 syncOffspringFlatten 这部分）
+    // Record core logic time (excluding syncOffspringFlatten)
     // ---------------------------------------------------------------------
     void updateOffspringFitnessCPU(TSP &tsp) {
         auto t0 = high_resolution_clock::now();
@@ -341,12 +344,12 @@ namespace GA {
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
         tsp.updateOffspringFitnessTime.computeTime += coreTime;
-        tsp.updateOffspringFitnessTime.kernelTime += 0;
+        tsp.updateOffspringFitnessTime.kernelTime += 0; // CPU only
         auto t_sync0 = high_resolution_clock::now();
         syncOffspringFlatten(tsp);
         auto t_sync1 = high_resolution_clock::now();
         double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
-        tsp.updateOffspringFitnessTime.totalTime =+ coreTime + syncTime;
+        tsp.updateOffspringFitnessTime.totalTime += coreTime + syncTime;
     }
 
 } // namespace GA

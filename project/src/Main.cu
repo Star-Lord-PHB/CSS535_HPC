@@ -8,21 +8,21 @@
 #include "GA_CUDA.h"
 #include "GA_oneThreadPerGene.hpp" // Additional GA variant (if needed)
 
-// 扩展的实现策略枚举
+// Extended implementation strategy enum
 enum class Implementation {
     CPU,
     CUDA,
-    CUDA_SELECTION,        // 仅 selection 使用 CUDA，其余均用 CPU
-    CUDA_CROSS,            // 仅 crossover 使用 CUDA
-    CUDA_MUTATION,         // 仅 mutation 使用 CUDA
-    CUDA_REPLACEMENT,      // 仅 replacement 使用 CUDA
-    CUDA_MIGRATION,        // 仅 migration 使用 CUDA
-    CUDA_UPDATE_POPULATION,  // 仅更新 population 适应度使用 CUDA
-    CUDA_UPDATE_OFFSPRING,    // 仅更新 offspring 适应度使用 CUDA
-    CUDA_UPDATE_ALL_FITNESS // 全部使用 CUDA 更新适应度
+    CUDA_SELECTION,        // Only selection using CUDA; others use CPU
+    CUDA_CROSS,            // Only crossover using CUDA; others use CPU
+    CUDA_MUTATION,         // Only mutation using CUDA; others use CPU
+    CUDA_REPLACEMENT,      // Only replacement using CUDA; others use CPU
+    CUDA_MIGRATION,        // Only migration using CUDA; others use CPU
+    CUDA_UPDATE_POPULATION,  // Only update population fitness using CUDA; others use CPU
+    CUDA_UPDATE_OFFSPRING,    // Only update offspring fitness using CUDA; others use CPU
+    CUDA_UPDATE_ALL_FITNESS // Use CUDA for updating all fitness values
 };
 
-// 函数集结构体，用于保存 GA 各部分的函数指针
+// Structure to hold function pointers for the GA steps
 struct GAFunctionSet {
     void (*selection)(TSP &);
     void (*crossover)(TSP &);
@@ -33,12 +33,12 @@ struct GAFunctionSet {
     void (*updateOffspringFitness)(TSP &);
 };
 
-// 扩展的 GAResult 结构体，增加各阶段计时信息
+// Extended GAResult structure to hold the result along with timing information
 struct GAResult {
     std::string strategyName;
     double bestFitness;
-    double totalTime; // 主循环迭代总时间
-    // 超参数
+    double totalTime; // Total time for the GA iterations (in seconds)
+    // Hyperparameters
     int numCities;
     int popSize;
     int mapSize;
@@ -47,7 +47,7 @@ struct GAResult {
     float crossoverProbability;
     float mutationProbability;
     int generations;
-    // 各阶段时间（单位秒）
+    // Timing for each phase (in seconds)
     double sel_compute, sel_kernel, sel_total;
     double cross_compute, cross_kernel, cross_total;
     double mut_compute, mut_kernel, mut_total;
@@ -57,7 +57,7 @@ struct GAResult {
     double updOff_compute, updOff_kernel, updOff_total;
 };
 
-// 获取策略名称
+// Get the strategy name string from the enum
 std::string getStrategyName(Implementation impl) {
     switch (impl) {
         case Implementation::CPU: return "CPU";
@@ -74,7 +74,7 @@ std::string getStrategyName(Implementation impl) {
     }
 }
 
-// 封装单个策略的运行过程，返回 GAResult
+// Run a single strategy; returns a GAResult containing the result and timing info.
 GAResult run_strategy(Implementation impl,
                       int numCities,
                       int popSize,
@@ -86,6 +86,7 @@ GAResult run_strategy(Implementation impl,
                       int generations)
 {
     GAFunctionSet gaFuncs;
+    // Set function pointers according to the selected strategy
     switch (impl) {
         case Implementation::CPU:
             gaFuncs.selection = GA::selectionCPU;
@@ -188,17 +189,17 @@ GAResult run_strategy(Implementation impl,
             break;
     }
 
-    // 创建 TSP 实例（构造函数中会初始化城市、种群和距离矩阵，同时可能初始化 GPU 数据及计时变量）
+    // Create a TSP instance (constructor initializes cities, population, distance matrix, GPU buffers, and time records)
     TSP tsp(numCities, popSize, mapSize, numIslands,
             parentSelectionRate, crossoverProbability, mutationProbability);
 
-    // 初始适应度更新
+    // Initial population fitness update
     gaFuncs.updatePopulationFitness(tsp);
 
-    // 记录 GA 迭代开始时间（包括所有阶段的执行时间）
+    // Record the start time for the GA iterations (this covers the whole GA loop)
     auto startTime = std::chrono::high_resolution_clock::now();
 
-    // GA 主循环
+    // GA main loop: each generation runs all GA steps
     for (int gen = 0; gen < generations; gen++) {
         gaFuncs.selection(tsp);
         gaFuncs.crossover(tsp);
@@ -209,11 +210,11 @@ GAResult run_strategy(Implementation impl,
         gaFuncs.updatePopulationFitness(tsp);
     }
 
-    // 记录结束时间
+    // Record the end time
     auto endTime = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = endTime - startTime;
 
-    // 遍历种群，找出最佳适应度
+    // Find the best fitness among all islands
     double bestFitness = -1.0;
     for (int island = 0; island < tsp.numIslands; island++) {
         for (const auto &ind : tsp.population[island]) {
@@ -222,7 +223,7 @@ GAResult run_strategy(Implementation impl,
         }
     }
 
-    // 构造结果，包括各阶段的计时数据
+    // Construct GAResult including timing data from each phase
     GAResult result;
     result.strategyName = getStrategyName(impl);
     result.bestFitness = bestFitness;
@@ -235,7 +236,7 @@ GAResult run_strategy(Implementation impl,
     result.crossoverProbability = crossoverProbability;
     result.mutationProbability = mutationProbability;
     result.generations = generations;
-    // 将各阶段的计时数据复制到 result 中
+
     result.sel_compute = tsp.selectionTime.computeTime;
     result.sel_kernel  = tsp.selectionTime.kernelTime;
     result.sel_total   = tsp.selectionTime.totalTime;
@@ -268,17 +269,17 @@ GAResult run_strategy(Implementation impl,
 }
 
 int main() {
-    // 超参数
+    // Hyperparameters
     int numCities = 256;
-    int popSize = 1024;
+    int popSize = 8192;
     int mapSize = 1000;
-    int numIslands = 64;
+    int numIslands = 16;
     float parentSelectionRate = 1.0f;
     float crossoverProbability = 0.7f;
     float mutationProbability = 0.05f;
-    int generations = 500;
+    int generations = 5;
 
-    // 策略列表
+    // Strategy list
     std::vector<Implementation> strategies = {
         Implementation::CPU,
         Implementation::CUDA,
@@ -292,7 +293,7 @@ int main() {
         Implementation::CUDA_UPDATE_ALL_FITNESS
     };
 
-    // 打开 CSV 文件写入数据
+    // Open CSV file to write data
     std::ofstream outfile("D://CSS535//CSS535_HPC//project//data.csv");
     outfile << "strategy,best_fitness,total_time,numCities,popSize,mapSize,numIslands,parentSelectionRate,crossoverProbability,mutationProbability,generations,"
             << "sel_compute,sel_kernel,sel_total,"
@@ -303,7 +304,7 @@ int main() {
             << "updPop_compute,updPop_kernel,updPop_total,"
             << "updOff_compute,updOff_kernel,updOff_total\n";
 
-    // 遍历每个策略，运行 GA 并写入结果
+    // Iterate through each strategy, run GA, and write results
     for (auto impl : strategies) {
         GAResult res = run_strategy(impl, numCities, popSize, mapSize, numIslands,
                                     parentSelectionRate, crossoverProbability, mutationProbability, generations);

@@ -1,5 +1,5 @@
 #include "GA_CUDA.h"
-#include "GA_CPU.h"  // 可参考 CPU 版本中的同步函数
+#include "GA_CPU.h"  // Refer to the CPU version for synchronization functions
 #include "TSP.h"
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
@@ -47,6 +47,7 @@ __global__ void crossoverKernel(const int *d_parentA, const int *d_parentB,
     int pairIdx = blockIdx.x * blockDim.x + threadIdx.x;
     if (pairIdx >= numPairs) return;
 
+    // Initialize CURAND state with given seed and thread-specific offset
     curandState state;
     curand_init(seed, pairIdx, 0, &state);
 
@@ -55,6 +56,7 @@ __global__ void crossoverKernel(const int *d_parentA, const int *d_parentB,
     int *child2 = d_child2 + base;
 
     float r = curand_uniform(&state);
+    // If crossover is not applied, copy parents directly to children
     if (r >= crossoverProb) {
         for (int i = 0; i < numCities; i++) {
             child1[i] = d_parentA[base + i];
@@ -63,6 +65,7 @@ __global__ void crossoverKernel(const int *d_parentA, const int *d_parentB,
         return;
     }
 
+    // Check if parents are identical; if yes, copy them directly
     bool identical = true;
     for (int i = 0; i < numCities; i++) {
         if (d_parentA[base + i] != d_parentB[base + i]) {
@@ -78,7 +81,7 @@ __global__ void crossoverKernel(const int *d_parentA, const int *d_parentB,
         return;
     }
 
-    // 初始化子代数组，全部置为 -1
+    // Initialize children with -1 values
     for (int i = 0; i < numCities; i++) {
         child1[i] = -1;
         child2[i] = -1;
@@ -86,10 +89,12 @@ __global__ void crossoverKernel(const int *d_parentA, const int *d_parentB,
     int p1 = curand(&state) % numCities;
     int p2 = curand(&state) % numCities;
     if (p1 > p2) { int tmp = p1; p1 = p2; p2 = tmp; }
+    // Copy segment from parents to children
     for (int i = p1; i <= p2; i++) {
         child1[i] = d_parentA[base + i];
         child2[i] = d_parentB[base + i];
     }
+    // Fill child1 with genes from parentB
     int idx = (p2 + 1) % numCities;
     for (int i = 0; i < numCities; i++) {
         int pos = (p2 + 1 + i) % numCities;
@@ -103,6 +108,7 @@ __global__ void crossoverKernel(const int *d_parentA, const int *d_parentB,
             idx = (idx + 1) % numCities;
         }
     }
+    // Fill child2 with genes from parentA
     idx = (p2 + 1) % numCities;
     for (int i = 0; i < numCities; i++) {
         int pos = (p2 + 1 + i) % numCities;
@@ -127,6 +133,7 @@ __global__ void mutationKernel(int *d_offspring, int totalIndividuals, int numCi
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= totalIndividuals) return;
 
+    // Initialize CURAND state for this thread
     curandState state;
     curand_init(seed, idx, 0, &state);
 
@@ -195,20 +202,22 @@ __global__ void replacementKernel(
     d_populationFitness[2 * pairIdx + 1] = fits[secondIdx];
 }
 
-// ====================== 以下是添加计时功能后的 CUDA 版本函数 ======================
+// ====================== CUDA Version Functions with Timing ======================
+//
+// For the CUDA version, computeTime records the time from the beginning of the function
+// until the GPU results are mapped back to the CPU (including CPU->GPU transfers,
+// kernel launch and execution). The kernelTime is measured using CUDA events.
+// The totalTime is the total time from the start of the function to the end,
+// including the mapping of GPU data back to the CPU.
 
-// 注：对于 CUDA 版本，computeTime 记录从函数开始到映射 GPU 数据回 CPU之前的时间（包括 CPU->GPU 传输、内核启动及执行），
-// kernelTime 记录内核执行时间（通过 CUDA 事件测量），
-// totalTime 为整个函数从开始到结束的时间（包括映射 GPU 数据回 CPU的时间）。
-
-// selectionCUDA: 调用 CPU 版本的 selection（纯 CPU环节，kernelTime=0）
+// selectionCUDA: Calls the CPU version of selection (pure CPU phase, kernelTime = 0)
 void selectionCUDA(TSP &tsp) {
     auto total_start = high_resolution_clock::now();
     auto compute_start = high_resolution_clock::now();
-    selectionCPU(tsp);
+    selectionCPU(tsp);  // Calls CPU version
     auto compute_end = high_resolution_clock::now();
     double compTime = duration_cast<duration<double>>(compute_end - compute_start).count();
-    // 此处无数据映射回CPU，所以 totalTime = compTime
+    // No GPU data mapping needed here, so totalTime equals compTime.
     auto total_end = high_resolution_clock::now();
     double totTime = duration_cast<duration<double>>(total_end - total_start).count();
     tsp.selectionTime.computeTime += compTime;
@@ -216,11 +225,12 @@ void selectionCUDA(TSP &tsp) {
     tsp.selectionTime.totalTime += totTime;
 }
 
-// crossoverCUDA: 包括 CPU->GPU传输、内核执行、以及将结果映射回 CPU（映射部分不计入 computeTime）
+// crossoverCUDA: Includes CPU->GPU transfer, kernel execution, and mapping results back to CPU.
+// The CPU mapping portion is not included in computeTime.
 void crossoverCUDA(TSP &tsp) {
     auto total_start = high_resolution_clock::now();
     auto compute_start = high_resolution_clock::now();
-    // 1. CPU->GPU传输
+    // 1. Transfer latest flattened parent data from CPU to GPU (included in computeTime)
     cudaMemcpy(tsp.d_parentA, tsp.parentAFlat.data(), tsp.parentAFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(tsp.d_parentB, tsp.parentBFlat.data(), tsp.parentBFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
     int totalPairs = 0;
@@ -244,7 +254,7 @@ void crossoverCUDA(TSP &tsp) {
     int blocks = (totalPairs + threads - 1) / threads;
     unsigned long seed = time(nullptr);
 
-    // 记录内核执行时间
+    // Measure kernel execution time using CUDA events
     cudaEvent_t startEvent, stopEvent;
     cudaEventCreate(&startEvent);
     cudaEventCreate(&stopEvent);
@@ -254,19 +264,19 @@ void crossoverCUDA(TSP &tsp) {
     cudaEventRecord(stopEvent, 0);
     cudaEventSynchronize(stopEvent);
     float kernelElapsed = 0;
-    cudaEventElapsedTime(&kernelElapsed, startEvent, stopEvent); // 单位：毫秒
+    cudaEventElapsedTime(&kernelElapsed, startEvent, stopEvent); // in milliseconds
     double kTime = kernelElapsed / 1000.0;
     cudaEventDestroy(startEvent);
     cudaEventDestroy(stopEvent);
     cudaDeviceSynchronize();
-    // 继续计算阶段：传输结果从 GPU 到 CPU
+    // 2. Transfer results from GPU to CPU (this mapping is not included in computeTime)
     tsp.offspringFlat.resize(totalPairs * 2 * tsp.numCities);
     cudaMemcpy(tsp.offspringFlat.data(), tsp.d_child1, totalPairs * tsp.numCities * sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(tsp.offspringFlat.data() + totalPairs * tsp.numCities, tsp.d_child2,
                totalPairs * tsp.numCities * sizeof(int), cudaMemcpyDeviceToHost);
     auto compute_end = high_resolution_clock::now();
     double compTime = duration_cast<duration<double>>(compute_end - compute_start).count();
-    // 现在进行 CPU 映射（不计入 computeTime）
+    // 3. CPU mapping phase: reconstruct offspring structure (not included in computeTime)
     auto mapping_start = high_resolution_clock::now();
     Offspring offsprings;
     offsprings.resize(tsp.numIslands);
@@ -294,13 +304,15 @@ void crossoverCUDA(TSP &tsp) {
     double mappingTime = duration_cast<duration<double>>(mapping_end - mapping_start).count();
     auto total_end = high_resolution_clock::now();
     double totTime = duration_cast<duration<double>>(total_end - total_start).count();
-    tsp.crossoverTime.computeTime += compTime;  // 不包含 CPU 映射
+    // computeTime includes CPU->GPU, kernel execution, and GPU->CPU transfer (but not the mapping phase)
+    tsp.crossoverTime.computeTime += compTime;
     tsp.crossoverTime.kernelTime += kTime;
     tsp.crossoverTime.totalTime += totTime;
     tsp.offsprings = offsprings;
 }
 
-// mutationCUDA: 包括内核执行和 CPU 更新 offspring 结构；CPU映射时间不计入 computeTime
+// mutationCUDA: Includes kernel execution and CPU update of offspring structure.
+// The CPU mapping phase is not included in computeTime.
 void mutationCUDA(TSP &tsp) {
     auto total_start = high_resolution_clock::now();
     auto compute_start = high_resolution_clock::now();
@@ -311,13 +323,14 @@ void mutationCUDA(TSP &tsp) {
     int totalOffspring = totalPairs * 2;
     int totalGenes = tsp.offspringFlat.size(); // = totalOffspring * tsp.numCities
 
-    // CPU->GPU传输（计入 computeTime）
+    // Transfer offspring data from CPU to GPU (included in computeTime)
     cudaMemcpy(tsp.d_offspring, tsp.offspringFlat.data(), totalGenes * sizeof(int), cudaMemcpyHostToDevice);
 
     int threads = 256;
     int blocks = (totalOffspring + threads - 1) / threads;
     unsigned long seed = time(nullptr);
 
+    // Record kernel execution time
     cudaEvent_t startEvent, stopEvent;
     cudaEventCreate(&startEvent);
     cudaEventCreate(&stopEvent);
@@ -332,12 +345,12 @@ void mutationCUDA(TSP &tsp) {
     cudaEventDestroy(stopEvent);
     cudaDeviceSynchronize();
 
-    // 包含GPU->CPU传输在 computeTime 内
+    // Transfer updated offspring data from GPU to CPU (included in computeTime)
     cudaMemcpy(tsp.offspringFlat.data(), tsp.d_offspring, totalGenes * sizeof(int), cudaMemcpyDeviceToHost);
     auto compute_end = high_resolution_clock::now();
     double compTime = duration_cast<duration<double>>(compute_end - compute_start).count();
 
-    // CPU映射部分：不计入 computeTime
+    // CPU mapping phase: update offspring structure (not included in computeTime)
     auto mapping_start = high_resolution_clock::now();
     int offset = 0;
     for (int island = 0; island < tsp.numIslands; island++) {
@@ -357,7 +370,8 @@ void mutationCUDA(TSP &tsp) {
     tsp.mutationTime.totalTime += totTime;
 }
 
-// updateOffspringFitnessCUDA: 包括内核执行和 CPU 更新 offspring fitness；不计入同步到 offspring结构的时间
+// updateOffspringFitnessCUDA: Includes kernel execution and CPU update of offspring fitness.
+// The CPU mapping phase (updating the offspring structure) is not included in computeTime.
 void updateOffspringFitnessCUDA(TSP &tsp) {
     auto total_start = high_resolution_clock::now();
     auto compute_start = high_resolution_clock::now();
@@ -368,12 +382,13 @@ void updateOffspringFitnessCUDA(TSP &tsp) {
     int totalOffspring = totalPairs * 2;
     int totalGenes = tsp.offspringFlat.size();
 
-    // CPU->GPU传输（计入 computeTime）
+    // Transfer offspring data from CPU to GPU (included in computeTime)
     cudaMemcpy(tsp.d_offspring, tsp.offspringFlat.data(), totalGenes * sizeof(int), cudaMemcpyHostToDevice);
 
     int threads = 256;
     int blocks = (totalOffspring + threads - 1) / threads;
 
+    // Record kernel execution time
     cudaEvent_t startEvent, stopEvent;
     cudaEventCreate(&startEvent);
     cudaEventCreate(&stopEvent);
@@ -388,13 +403,13 @@ void updateOffspringFitnessCUDA(TSP &tsp) {
     cudaEventDestroy(stopEvent);
     cudaDeviceSynchronize();
 
-    // GPU->CPU传输（计入 computeTime）
+    // Transfer computed fitness from GPU to CPU (included in computeTime)
     tsp.offspringFitnessFlat.resize(totalOffspring);
     cudaMemcpy(tsp.offspringFitnessFlat.data(), tsp.d_offspringFitness, totalOffspring * sizeof(float), cudaMemcpyDeviceToHost);
     auto compute_end = high_resolution_clock::now();
     double compTime = duration_cast<duration<double>>(compute_end - compute_start).count();
 
-    // CPU映射部分：将获得的 fitness 更新到 offspring 结构，不计入 computeTime
+    // CPU mapping phase: update the offspring structure (not included in computeTime)
     auto mapping_start = high_resolution_clock::now();
     int idx = 0;
     for (int island = 0; island < tsp.numIslands; island++) {
@@ -411,15 +426,17 @@ void updateOffspringFitnessCUDA(TSP &tsp) {
     tsp.updateOffspringFitnessTime.totalTime += totTime;
 }
 
-// updatePopulationFitnessCUDA: 包括内核执行和 CPU 更新 population fitness；不计入将数据映射回 CPU 结构的时间
+// updatePopulationFitnessCUDA: Includes kernel execution and CPU update of population fitness.
+// The CPU mapping phase (updating the population structure) is not included in computeTime.
 void updatePopulationFitnessCUDA(TSP &tsp) {
     auto total_start = high_resolution_clock::now();
-    // CPU->GPU传输
+    // Transfer population data from CPU to GPU
     cudaMemcpy(tsp.d_population, tsp.populationFlat.data(), tsp.populationFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
 
     int threads = 256;
     int blocks = (tsp.popSize + threads - 1) / threads;
 
+    // Record kernel execution time
     cudaEvent_t startEvent, stopEvent;
     cudaEventCreate(&startEvent);
     cudaEventCreate(&stopEvent);
@@ -437,8 +454,8 @@ void updatePopulationFitnessCUDA(TSP &tsp) {
     std::vector<float> h_fit(tsp.popSize);
     cudaMemcpy(h_fit.data(), tsp.d_populationFitness, tsp.popSize * sizeof(float), cudaMemcpyDeviceToHost);
     auto compute_end = high_resolution_clock::now();
-    double compTime = duration_cast<duration<double>>(compute_end - total_start).count(); // 包括CPU->GPU与内核执行与GPU->CPU
-    // CPU映射部分：更新 population 内 fitness（不计入 computeTime）
+    double compTime = duration_cast<duration<double>>(compute_end - total_start).count(); // Includes CPU->GPU, kernel, and GPU->CPU transfers
+    // CPU mapping phase: update population structure (not included in computeTime)
     auto mapping_start = high_resolution_clock::now();
     int idx = 0;
     for (int island = 0; island < tsp.numIslands; island++) {
@@ -450,19 +467,20 @@ void updatePopulationFitnessCUDA(TSP &tsp) {
     double mappingTime = duration_cast<duration<double>>(mapping_end - mapping_start).count();
     auto total_end = high_resolution_clock::now();
     double totTime = duration_cast<duration<double>>(total_end - total_start).count();
-    tsp.updatePopulationFitnessTime.computeTime += compTime; // 不包含CPU映射部分
+    tsp.updatePopulationFitnessTime.computeTime += compTime; // Not subtracting mapping time
     tsp.updatePopulationFitnessTime.kernelTime += kTime;
     tsp.updatePopulationFitnessTime.totalTime += totTime;
 }
 
-// replacementCUDA: 包括内核执行和 CPU 更新 population 数据；CPU映射部分不计入 computeTime
+// replacementCUDA: Includes kernel execution and CPU update of population structure.
+// The CPU mapping phase (updating the population structure) is not included in computeTime.
 void replacementCUDA(TSP &tsp) {
     auto total_start = high_resolution_clock::now();
     int totalPairs = 0;
     for (int i = 0; i < tsp.numIslands; i++) {
         totalPairs += tsp.parentPairs[i].size();
     }
-    // CPU->GPU传输
+    // Transfer data from CPU to GPU
     cudaMemcpy(tsp.d_parentA, tsp.parentAFlat.data(), tsp.parentAFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(tsp.d_parentB, tsp.parentBFlat.data(), tsp.parentBFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(tsp.d_parentFitness, tsp.parentFitnessFlat.data(), tsp.parentFitnessFlat.size() * sizeof(float), cudaMemcpyHostToDevice);
@@ -490,11 +508,12 @@ void replacementCUDA(TSP &tsp) {
     cudaEventDestroy(stopEvent);
     cudaDeviceSynchronize();
 
-    // CPU映射：包含将GPU数据映射回CPU结构
+    // Transfer GPU results back to CPU (included in computeTime)
     cudaMemcpy(tsp.populationFlat.data(), tsp.d_population, tsp.populationFlat.size() * sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(tsp.parentFitnessFlat.data(), tsp.d_populationFitness, tsp.parentFitnessFlat.size() * sizeof(float), cudaMemcpyDeviceToHost);
     auto compute_end = high_resolution_clock::now();
-    double compTime = duration_cast<duration<double>>(compute_end - total_start).count(); // 包含CPU->GPU、内核和GPU->CPU
+    double compTime = duration_cast<duration<double>>(compute_end - total_start).count();
+    // CPU mapping phase: update population structure (not included in computeTime)
     auto mapping_start = high_resolution_clock::now();
     int offset = 0;
     int fit_idx = 0;
@@ -511,12 +530,12 @@ void replacementCUDA(TSP &tsp) {
     double mappingTime = duration_cast<duration<double>>(mapping_end - mapping_start).count();
     auto total_end = high_resolution_clock::now();
     double totTime = duration_cast<duration<double>>(total_end - total_start).count();
-    tsp.replacementTime.computeTime += compTime; // 不扣除CPU映射时间
+    tsp.replacementTime.computeTime += compTime;
     tsp.replacementTime.kernelTime += kTime;
     tsp.replacementTime.totalTime += totTime;
 }
 
-// migrationCUDA: 调用 CPU 版本的 migrationCPU，并计时（此处全部计入）
+// migrationCUDA: Calls the CPU version of migration and records total time (all included)
 void migrationCUDA(TSP &tsp) {
     auto total_start = high_resolution_clock::now();
     auto compute_start = high_resolution_clock::now();
