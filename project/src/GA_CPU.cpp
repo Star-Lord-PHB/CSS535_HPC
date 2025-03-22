@@ -60,6 +60,7 @@ namespace GA {
     // 遍历 tsp.offsprings，将每个子代的染色体和适应度写入展平数组
     // ---------------------------------------------------------------------
     void syncOffspringFlatten(TSP &tsp) {
+        // std::cout<<"entering syncOffspringFlatten"<<std::endl;
         int totalOffspring = 0;
         for (int island = 0; island < tsp.numIslands; island++) {
             totalOffspring += tsp.offsprings[island].size();

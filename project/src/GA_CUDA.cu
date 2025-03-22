@@ -36,69 +36,90 @@ namespace GA {
     // ---------------------------------------------------------------------
     // Kernel: Order Crossover (OX) for a pair of parents.
     // ---------------------------------------------------------------------
-    __global__ void crossoverKernel(const int *d_parentA, const int *d_parentB,
-                                      int *d_child1, int *d_child2,
-                                      int numPairs, int numCities,
-                                      float crossoverProb, unsigned long seed)
-    {
-        int pairIdx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (pairIdx >= numPairs) return;
+__global__ void crossoverKernel(const int *d_parentA, const int *d_parentB,
+                                  int *d_child1, int *d_child2,
+                                  int numPairs, int numCities,
+                                  float crossoverProb, unsigned long seed)
+{
+    int pairIdx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (pairIdx >= numPairs) return;
 
-        curandState state;
-        curand_init(seed, pairIdx, 0, &state);
+    curandState state;
+    curand_init(seed, pairIdx, 0, &state);
 
-        int base = pairIdx * numCities;
-        int *child1 = d_child1 + base;
-        int *child2 = d_child2 + base;
+    int base = pairIdx * numCities;
+    int *child1 = d_child1 + base;
+    int *child2 = d_child2 + base;
 
-        float r = curand_uniform(&state);
-        if (r >= crossoverProb) {
-            for (int i = 0; i < numCities; i++) {
-                child1[i] = d_parentA[base + i];
-                child2[i] = d_parentB[base + i];
-            }
-            return;
-        }
-
-        // Initialize children with -1
+    float r = curand_uniform(&state);
+    // 如果不进行交叉，则直接复制父代
+    if (r >= crossoverProb) {
         for (int i = 0; i < numCities; i++) {
-            child1[i] = -1;
-            child2[i] = -1;
-        }
-        int p1 = curand(&state) % numCities;
-        int p2 = curand(&state) % numCities;
-        if (p1 > p2) { int tmp = p1; p1 = p2; p2 = tmp; }
-        for (int i = p1; i <= p2; i++) {
             child1[i] = d_parentA[base + i];
             child2[i] = d_parentB[base + i];
         }
-        int idx = (p2 + 1) % numCities;
-        for (int i = 0; i < numCities; i++) {
-            int pos = (p2 + 1 + i) % numCities;
-            int gene = d_parentB[base + pos];
-            bool found = false;
-            for (int j = p1; j <= p2; j++) {
-                if (child1[j] == gene) { found = true; break; }
-            }
-            if (!found) {
-                child1[idx] = gene;
-                idx = (idx + 1) % numCities;
-            }
-        }
-        idx = (p2 + 1) % numCities;
-        for (int i = 0; i < numCities; i++) {
-            int pos = (p2 + 1 + i) % numCities;
-            int gene = d_parentA[base + pos];
-            bool found = false;
-            for (int j = p1; j <= p2; j++) {
-                if (child2[j] == gene) { found = true; break; }
-            }
-            if (!found) {
-                child2[idx] = gene;
-                idx = (idx + 1) % numCities;
-            }
+        return;
+    }
+
+    // 增加判断：如果两个父代完全相同，则直接复制
+    bool identical = true;
+    for (int i = 0; i < numCities; i++) {
+        if (d_parentA[base + i] != d_parentB[base + i]) {
+            identical = false;
+            break;
         }
     }
+    if (identical) {
+        for (int i = 0; i < numCities; i++) {
+            child1[i] = d_parentA[base + i];
+            child2[i] = d_parentB[base + i];
+        }
+        return;
+    }
+
+    // 初始化子代数组，全部置为 -1
+    for (int i = 0; i < numCities; i++) {
+        child1[i] = -1;
+        child2[i] = -1;
+    }
+    int p1 = curand(&state) % numCities;
+    int p2 = curand(&state) % numCities;
+    if (p1 > p2) { int tmp = p1; p1 = p2; p2 = tmp; }
+    // 将父代区间复制到子代中
+    for (int i = p1; i <= p2; i++) {
+        child1[i] = d_parentA[base + i];
+        child2[i] = d_parentB[base + i];
+    }
+    // 填充 child1：从父代B中选取剩余基因
+    int idx = (p2 + 1) % numCities;
+    for (int i = 0; i < numCities; i++) {
+        int pos = (p2 + 1 + i) % numCities;
+        int gene = d_parentB[base + pos];
+        bool found = false;
+        for (int j = p1; j <= p2; j++) {
+            if (child1[j] == gene) { found = true; break; }
+        }
+        if (!found) {
+            child1[idx] = gene;
+            idx = (idx + 1) % numCities;
+        }
+    }
+    // 填充 child2：从父代A中选取剩余基因
+    idx = (p2 + 1) % numCities;
+    for (int i = 0; i < numCities; i++) {
+        int pos = (p2 + 1 + i) % numCities;
+        int gene = d_parentA[base + pos];
+        bool found = false;
+        for (int j = p1; j <= p2; j++) {
+            if (child2[j] == gene) { found = true; break; }
+        }
+        if (!found) {
+            child2[idx] = gene;
+            idx = (idx + 1) % numCities;
+        }
+    }
+}
+
 
     // ---------------------------------------------------------------------
     // Kernel: Mutation: Each thread processes one individual
@@ -215,49 +236,60 @@ namespace GA {
     // 使用展平的 tsp.parentAFlat 与 tsp.parentBFlat 执行交叉，
     // 并重构 tsp.offsprings，同时更新展平的 tsp.offspringFlat
     // ---------------------------------------------------------------------
-    void crossoverCUDA(TSP &tsp) {
-        int totalPairs = 0;
-        for (int i = 0; i < tsp.numIslands; i++) {
-            totalPairs += tsp.parentPairs[i].size();
-        }
-        int threads = 256;
-        int blocks = (totalPairs + threads - 1) / threads;
-        unsigned long seed = time(nullptr);
-        // 启动交叉 kernel
-        crossoverKernel<<<blocks, threads>>>(tsp.d_parentA, tsp.d_parentB, tsp.d_child1, tsp.d_child2,
-                                               totalPairs, tsp.numCities, tsp.crossoverProbability, seed);
-        cudaDeviceSynchronize();
-        // 从设备读取交叉结果到展平数组 tsp.offspringFlat
-        tsp.offspringFlat.resize(totalPairs * 2 * tsp.numCities);
-        cudaMemcpy(tsp.offspringFlat.data(), tsp.d_child1, totalPairs * tsp.numCities * sizeof(int), cudaMemcpyDeviceToHost);
-        cudaMemcpy(tsp.offspringFlat.data() + totalPairs * tsp.numCities, tsp.d_child2,
-                   totalPairs * tsp.numCities * sizeof(int), cudaMemcpyDeviceToHost);
-        // 重构 CPU 端 tsp.offsprings 结构
-        Offspring offsprings;
-        offsprings.resize(tsp.numIslands);
-        int pairIndex = 0;
-        for (int island = 0; island < tsp.numIslands; island++) {
-            int numPairs = tsp.parentPairs[island].size();
-            for (int i = 0; i < numPairs; i++) {
-                Individual child1, child2;
-                child1.chromosome.resize(tsp.numCities);
-                child2.chromosome.resize(tsp.numCities);
-                for (int j = 0; j < tsp.numCities; j++) {
-                    child1.chromosome[j] = tsp.offspringFlat[pairIndex * tsp.numCities + j];
-                    child2.chromosome[j] = tsp.offspringFlat[(totalPairs + pairIndex) * tsp.numCities + j];
-                }
-                child1.fitness = 0.0f;
-                child2.fitness = 0.0f;
-                child1.islandID = island;
-                child2.islandID = island;
-                offsprings[island].push_back(child1);
-                offsprings[island].push_back(child2);
-                pairIndex++;
-            }
-        }
-        tsp.offsprings = offsprings;
-        // 此时 CPU 端的 offspring（及展平数据）均已更新
+void crossoverCUDA(TSP &tsp) {
+    // 将 CPU 端最新的父代展平数据复制到设备
+    cudaMemcpy(tsp.d_parentA, tsp.parentAFlat.data(), tsp.parentAFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(tsp.d_parentB, tsp.parentBFlat.data(), tsp.parentBFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
+
+    int totalPairs = 0;
+    for (int i = 0; i < tsp.numIslands; i++) {
+        totalPairs += tsp.parentPairs[i].size();
     }
+    if (totalPairs == 0) {
+        std::cerr << "Warning: No parent pairs available for crossover." << std::endl;
+        tsp.offsprings.clear();
+        tsp.offsprings.resize(tsp.numIslands);
+        return;
+    }
+    int threads = 256;
+    int blocks = (totalPairs + threads - 1) / threads;
+    unsigned long seed = time(nullptr);
+    // 启动交叉 kernel
+    crossoverKernel<<<blocks, threads>>>(tsp.d_parentA, tsp.d_parentB, tsp.d_child1, tsp.d_child2,
+                                           totalPairs, tsp.numCities, tsp.crossoverProbability, seed);
+    cudaDeviceSynchronize();
+    // 从设备读取交叉结果到展平数组 tsp.offspringFlat
+    tsp.offspringFlat.resize(totalPairs * 2 * tsp.numCities);
+    cudaMemcpy(tsp.offspringFlat.data(), tsp.d_child1, totalPairs * tsp.numCities * sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(tsp.offspringFlat.data() + totalPairs * tsp.numCities, tsp.d_child2,
+               totalPairs * tsp.numCities * sizeof(int), cudaMemcpyDeviceToHost);
+
+    // 重构 CPU 端的 tsp.offsprings 结构（重构代码保持不变）
+    Offspring offsprings;
+    offsprings.resize(tsp.numIslands);
+    int pairIndex = 0;
+    for (int island = 0; island < tsp.numIslands; island++) {
+        int numPairs = tsp.parentPairs[island].size();
+        for (int i = 0; i < numPairs; i++) {
+            Individual child1, child2;
+            child1.chromosome.resize(tsp.numCities);
+            child2.chromosome.resize(tsp.numCities);
+            for (int j = 0; j < tsp.numCities; j++) {
+                child1.chromosome[j] = tsp.offspringFlat[pairIndex * tsp.numCities + j];
+                child2.chromosome[j] = tsp.offspringFlat[(totalPairs + pairIndex) * tsp.numCities + j];
+            }
+            child1.fitness = 0.0f;
+            child2.fitness = 0.0f;
+            child1.islandID = island;
+            child2.islandID = island;
+            offsprings[island].push_back(child1);
+            offsprings[island].push_back(child2);
+            pairIndex++;
+        }
+    }
+    tsp.offsprings = offsprings;
+}
+
 
     // ---------------------------------------------------------------------
     // mutationCUDA (同步更新 CPU 端 offspring 数据)
