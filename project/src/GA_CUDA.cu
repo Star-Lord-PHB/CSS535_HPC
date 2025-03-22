@@ -1,5 +1,5 @@
 #include "GA_CUDA.h"
-#include "GA_CPU.h"  // For reference if needed
+#include "GA_CPU.h"  // 可参考 CPU 版本中的同步函数
 #include "TSP.h"
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
@@ -37,9 +37,9 @@ namespace GA {
     // Kernel: Order Crossover (OX) for a pair of parents.
     // ---------------------------------------------------------------------
     __global__ void crossoverKernel(const int *d_parentA, const int *d_parentB,
-                                    int *d_child1, int *d_child2,
-                                    int numPairs, int numCities,
-                                    float crossoverProb, unsigned long seed)
+                                      int *d_child1, int *d_child2,
+                                      int numPairs, int numCities,
+                                      float crossoverProb, unsigned long seed)
     {
         int pairIdx = blockIdx.x * blockDim.x + threadIdx.x;
         if (pairIdx >= numPairs) return;
@@ -178,20 +178,21 @@ namespace GA {
     }
 
     // ---------------------------------------------------------------------
-    // selection (CUDA)
-    // Uses the CPU selection routine to update tsp.parentPairs and the flattened parent arrays.
+    // selectionCUDA (同步更新 CPU 数据)
+    // 调用 CPU 版本的 selectionCPU 完成 tsp.parentPairs 的更新，
+    // 然后将其展平更新到 tsp.parentAFlat、tsp.parentBFlat 和 tsp.parentFitnessFlat
     // ---------------------------------------------------------------------
     void selectionCUDA(TSP &tsp) {
-        // Call CPU version to perform selection and update tsp.parentPairs
+        // 调用 CPU 版本选择函数，更新 tsp.parentPairs
         selectionCPU(tsp);
-        // Update flattened parent arrays using tsp.parentPairs
+        // 同步更新父代展平数据
         int totalPairs = 0;
         for (int i = 0; i < tsp.numIslands; i++) {
             totalPairs += tsp.parentPairs[i].size();
         }
         tsp.parentAFlat.resize(totalPairs * tsp.numCities);
         tsp.parentBFlat.resize(totalPairs * tsp.numCities);
-        tsp.parentFitnessFlat.resize(2 * totalPairs);
+        tsp.parentFitnessFlat.resize(totalPairs * 2);
         int pairIndex = 0;
         for (int island = 0; island < tsp.numIslands; island++) {
             for (size_t i = 0; i < tsp.parentPairs[island].size(); i++) {
@@ -206,12 +207,13 @@ namespace GA {
                 pairIndex++;
             }
         }
+        // 此时 CPU 端的父代数据（非展平及展平版本）均已更新
     }
 
     // ---------------------------------------------------------------------
-    // crossover (CUDA)
-    // Uses the pre-flattened tsp.parentAFlat and tsp.parentBFlat to perform crossover.
-    // The offspring are stored in tsp.offsprings and flattened into tsp.offspringFlat.
+    // crossoverCUDA (同步更新 CPU 端 offspring 数据)
+    // 使用展平的 tsp.parentAFlat 与 tsp.parentBFlat 执行交叉，
+    // 并重构 tsp.offsprings，同时更新展平的 tsp.offspringFlat
     // ---------------------------------------------------------------------
     void crossoverCUDA(TSP &tsp) {
         int totalPairs = 0;
@@ -221,16 +223,16 @@ namespace GA {
         int threads = 256;
         int blocks = (totalPairs + threads - 1) / threads;
         unsigned long seed = time(nullptr);
-        // Launch the crossover kernel
+        // 启动交叉 kernel
         crossoverKernel<<<blocks, threads>>>(tsp.d_parentA, tsp.d_parentB, tsp.d_child1, tsp.d_child2,
                                                totalPairs, tsp.numCities, tsp.crossoverProbability, seed);
         cudaDeviceSynchronize();
-        // Retrieve the offspring from device into tsp.offspringFlat
+        // 从设备读取交叉结果到展平数组 tsp.offspringFlat
         tsp.offspringFlat.resize(totalPairs * 2 * tsp.numCities);
         cudaMemcpy(tsp.offspringFlat.data(), tsp.d_child1, totalPairs * tsp.numCities * sizeof(int), cudaMemcpyDeviceToHost);
         cudaMemcpy(tsp.offspringFlat.data() + totalPairs * tsp.numCities, tsp.d_child2,
                    totalPairs * tsp.numCities * sizeof(int), cudaMemcpyDeviceToHost);
-        // Reconstruct the tsp.offsprings structure from the flattened data
+        // 重构 CPU 端 tsp.offsprings 结构
         Offspring offsprings;
         offsprings.resize(tsp.numIslands);
         int pairIndex = 0;
@@ -254,11 +256,12 @@ namespace GA {
             }
         }
         tsp.offsprings = offsprings;
+        // 此时 CPU 端的 offspring（及展平数据）均已更新
     }
 
     // ---------------------------------------------------------------------
-    // mutation (CUDA)
-    // Uses the existing flattened offspring data in tsp.offspringFlat.
+    // mutationCUDA (同步更新 CPU 端 offspring 数据)
+    // 使用展平的 tsp.offspringFlat 执行变异，变异后更新 tsp.offsprings
     // ---------------------------------------------------------------------
     void mutationCUDA(TSP &tsp) {
         int totalPairs = 0;
@@ -266,7 +269,7 @@ namespace GA {
             totalPairs += tsp.parentPairs[i].size();
         }
         int totalOffspring = totalPairs * 2;
-        int totalGenes = tsp.offspringFlat.size(); // equals totalOffspring * tsp.numCities
+        int totalGenes = tsp.offspringFlat.size(); // totalOffspring * tsp.numCities
         cudaMemcpy(tsp.d_offspring, tsp.offspringFlat.data(), totalGenes * sizeof(int), cudaMemcpyHostToDevice);
         int threads = 256;
         int blocks = (totalOffspring + threads - 1) / threads;
@@ -274,7 +277,7 @@ namespace GA {
         mutationKernel<<<blocks, threads>>>(tsp.d_offspring, totalOffspring, tsp.numCities, tsp.mutationProbability, seed);
         cudaDeviceSynchronize();
         cudaMemcpy(tsp.offspringFlat.data(), tsp.d_offspring, totalGenes * sizeof(int), cudaMemcpyDeviceToHost);
-        // Update tsp.offsprings from the flattened data
+        // 更新 CPU 端 tsp.offsprings 数据
         int offset = 0;
         for (int island = 0; island < tsp.numIslands; island++) {
             for (auto &child : tsp.offsprings[island]) {
@@ -284,11 +287,12 @@ namespace GA {
                 offset++;
             }
         }
+        // 同步完成
     }
 
     // ---------------------------------------------------------------------
-    // updateOffspringFitness (CUDA)
-    // Uses the existing flattened offspring data in tsp.offspringFlat.
+    // updateOffspringFitnessCUDA (同步更新 CPU 端 offspring 的适应度)
+    // 使用展平的 tsp.offspringFlat 计算适应度，并更新 tsp.offsprings 中各子代的 fitness
     // ---------------------------------------------------------------------
     void updateOffspringFitnessCUDA(TSP &tsp) {
         int totalPairs = 0;
@@ -310,11 +314,11 @@ namespace GA {
                 child.fitness = tsp.offspringFitnessFlat[idx++];
             }
         }
+        // 同步后，CPU 端 offspring 的适应度已更新
     }
 
     // ---------------------------------------------------------------------
-    // updatePopulationFitness (CUDA)
-    // Updates the fitness of the entire population.
+    // updatePopulationFitnessCUDA (同步更新 CPU 端 population 中各个体的适应度)
     // ---------------------------------------------------------------------
     void updatePopulationFitnessCUDA(TSP &tsp) {
         cudaMemcpy(tsp.d_population, tsp.populationFlat.data(), tsp.populationFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
@@ -330,21 +334,18 @@ namespace GA {
                 ind.fitness = h_fit[idx++];
             }
         }
+        // 此处可根据需要调用 tsp.flattenPopulationToHost() 更新展平数据
     }
 
     // ---------------------------------------------------------------------
-    // replacement (CUDA)
-    // GPU implementation of replacement:
-    // For each parent pair (with two children), select the best two individuals
-    // from {parent A, parent B, child1, child2} to replace the original parents.
-    // The updated flattened population is then copied back into tsp.population.
+    // replacementCUDA (同步更新 CPU 端 population 数据)
+    // 执行替换操作后，将更新后的种群展平数据复制回 CPU，并重构 tsp.population
     // ---------------------------------------------------------------------
     void replacementCUDA(TSP &tsp) {
         int totalPairs = 0;
         for (int i = 0; i < tsp.numIslands; i++) {
             totalPairs += tsp.parentPairs[i].size();
         }
-        // Copy parent and offspring flattened data to device.
         cudaMemcpy(tsp.d_parentA, tsp.parentAFlat.data(), tsp.parentAFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
         cudaMemcpy(tsp.d_parentB, tsp.parentBFlat.data(), tsp.parentBFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
         cudaMemcpy(tsp.d_parentFitness, tsp.parentFitnessFlat.data(), tsp.parentFitnessFlat.size() * sizeof(float), cudaMemcpyHostToDevice);
@@ -361,11 +362,9 @@ namespace GA {
                                                  totalPairs, tsp.numCities, totalPairs);
         cudaDeviceSynchronize();
 
-        // Copy the updated flattened population data from device back to host.
         cudaMemcpy(tsp.populationFlat.data(), tsp.d_population, tsp.populationFlat.size() * sizeof(int), cudaMemcpyDeviceToHost);
         cudaMemcpy(tsp.parentFitnessFlat.data(), tsp.d_populationFitness, tsp.parentFitnessFlat.size() * sizeof(float), cudaMemcpyDeviceToHost);
 
-        // Update tsp.population from the flattened population array.
         int offset = 0;
         int fit_idx = 0;
         for (int island = 0; island < tsp.numIslands; island++) {
@@ -377,15 +376,17 @@ namespace GA {
                 offset += tsp.numCities;
             }
         }
+        // 此时 CPU 端的种群数据已更新同步
     }
 
     // ---------------------------------------------------------------------
-    // migration (CUDA)
-    // For migration, we simply call the CPU version as a placeholder.
+    // migrationCUDA (同步更新 CPU 端 population 数据)
+    // 直接调用 CPU 版本的 migrationCPU，然后更新展平数组
     // ---------------------------------------------------------------------
     void migrationCUDA(TSP &tsp) {
         migrationCPU(tsp);
         tsp.flattenPopulationToHost();
+        // CPU 端的 tsp.population 和展平数组已同步
     }
 
 } // namespace GA
