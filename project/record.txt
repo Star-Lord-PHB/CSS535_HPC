@@ -20,9 +20,14 @@ mutation概率
 
 
 目前的进度：
-CPU √ (best fitness: 9.92854e-06, Total time: 25.5891 seconds)
+CPU √
+Island 63 best fitness: 1.19694e-05
+Total GA iterations time: 62.1465 seconds.
 
-GPU-个体 (best fitness: 1.2417e-05, Total time: 59.1334 seconds)
+GPU-个体
+Island 63 best fitness: 1.19163e-05
+Total GA iterations time: 39.1046 seconds.
+
 computeFitness √
 selection
 crossover √

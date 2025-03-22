@@ -1,92 +1,170 @@
 #include "GA_CPU.h"
-#include <iostream>
-#include <vector>
 #include <algorithm>
+#include <cstdlib>
+#include <ctime>
+#include <iostream>
 #include <random>
+#include <vector>
 #include <cmath>
+#include <chrono>
 #include "TSP.h"
 
 namespace GA {
 
-    // ------------------------------
-    // 帮助函数：CPU计算单个个体适应度
-    // ------------------------------
-    static float computeFitnessCPU(const Individual &ind, const TSP &tsp) {
+    using namespace std::chrono;
+
+    // ---------------------------------------------------------------------
+    // Compute the fitness for a single individual (CPU version)
+    // Fitness = 1 / (total tour distance)
+    // ---------------------------------------------------------------------
+    float computeFitnessCPU(const Individual &ind, const TSP &tsp) {
         float totalDistance = 0.0f;
         for (int i = 0; i < tsp.numCities - 1; i++) {
             int city1 = ind.chromosome[i];
             int city2 = ind.chromosome[i + 1];
             totalDistance += tsp.distanceMatrix[city1][city2];
         }
-        // 回到起点
+        // Add the distance from the last city back to the first city
         totalDistance += tsp.distanceMatrix[ind.chromosome[tsp.numCities - 1]][ind.chromosome[0]];
         return (totalDistance <= 0.0f) ? 0.0f : 1.0f / totalDistance;
     }
 
-    // ------------------------------
-    // 1) Selection (CPU)
-    // ------------------------------
-    ParentPairs selectionCPU(TSP &tsp) {
-        ParentPairs parentPairs(tsp.numIslands);
-        std::mt19937 rng(std::random_device{}());
+    // ---------------------------------------------------------------------
+    // Synchronize the flattened parent data (not counted in timing)
+    // ---------------------------------------------------------------------
+    void syncParentFlatten(TSP &tsp) {
+        int totalPairs = 0;
+        for (int island = 0; island < tsp.numIslands; island++) {
+            totalPairs += tsp.parentPairs[island].size();
+        }
+        tsp.parentAFlat.resize(totalPairs * tsp.numCities);
+        tsp.parentBFlat.resize(totalPairs * tsp.numCities);
+        tsp.parentFitnessFlat.resize(totalPairs * 2);
 
+        int pairIndex = 0;
+        for (int island = 0; island < tsp.numIslands; island++) {
+            for (size_t i = 0; i < tsp.parentPairs[island].size(); i++) {
+                const Individual &pa = tsp.parentPairs[island][i].first;
+                const Individual &pb = tsp.parentPairs[island][i].second;
+                for (int j = 0; j < tsp.numCities; j++) {
+                    tsp.parentAFlat[pairIndex * tsp.numCities + j] = pa.chromosome[j];
+                    tsp.parentBFlat[pairIndex * tsp.numCities + j] = pb.chromosome[j];
+                }
+                tsp.parentFitnessFlat[2 * pairIndex]     = pa.fitness;
+                tsp.parentFitnessFlat[2 * pairIndex + 1] = pb.fitness;
+                pairIndex++;
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Synchronize the flattened offspring data (not counted in timing)
+    // ---------------------------------------------------------------------
+    void syncOffspringFlatten(TSP &tsp) {
+        int totalOffspring = 0;
+        for (int island = 0; island < tsp.numIslands; island++) {
+            totalOffspring += tsp.offsprings[island].size();
+        }
+        tsp.offspringFlat.resize(totalOffspring * tsp.numCities);
+        tsp.offspringFitnessFlat.resize(totalOffspring);
+
+        int offset = 0;      // Starting index in offspringFlat
+        int childIndex = 0;  // Offspring counter
+        for (int island = 0; island < tsp.numIslands; island++) {
+            for (size_t i = 0; i < tsp.offsprings[island].size(); i++) {
+                const Individual &child = tsp.offsprings[island][i];
+                for (int j = 0; j < tsp.numCities; j++) {
+                    tsp.offspringFlat[offset + j] = child.chromosome[j];
+                }
+                tsp.offspringFitnessFlat[childIndex] = child.fitness;
+                offset += tsp.numCities;
+                childIndex++;
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // 1) Selection (CPU)
+    // Record core logic time (excluding syncParentFlatten)
+    // ---------------------------------------------------------------------
+    void selectionCPU(TSP &tsp) {
+        auto t0 = high_resolution_clock::now();
+
+        // Clear and resize parent pairs per island
+        tsp.parentPairs.clear();
+        tsp.parentPairs.resize(tsp.numIslands);
+
+        std::mt19937 rng(std::random_device{}());
         for (int island = 0; island < tsp.numIslands; island++) {
             auto &islandPop = tsp.population[island];
             std::shuffle(islandPop.begin(), islandPop.end(), rng);
             int numPairs = islandPop.size() / 2;
             for (int i = 0; i < numPairs; i++) {
-                parentPairs[island].push_back({islandPop[2*i], islandPop[2*i + 1]});
+                tsp.parentPairs[island].push_back({ islandPop[2 * i], islandPop[2 * i + 1] });
             }
-            // 若有奇数个体，最后一个自我配对
+            // If odd number of individuals, pair the last one with itself
             if (islandPop.size() % 2 == 1) {
-                parentPairs[island].push_back({islandPop.back(), islandPop.back()});
+                tsp.parentPairs[island].push_back({ islandPop.back(), islandPop.back() });
             }
         }
-        return parentPairs;
+        tsp.parentPairCount.clear();
+        for (int island = 0; island < tsp.numIslands; island++) {
+            tsp.parentPairCount.push_back(tsp.parentPairs[island].size());
+        }
+        auto t1 = high_resolution_clock::now();
+        double coreTime = duration_cast<duration<double>>(t1 - t0).count();
+        // Core compute time (excluding synchronization)
+        tsp.selectionTime.computeTime += coreTime;
+        tsp.selectionTime.kernelTime += 0; // No kernel calls on CPU
+        // Synchronization part (not included in computeTime)
+        auto t_sync0 = high_resolution_clock::now();
+        syncParentFlatten(tsp);
+        auto t_sync1 = high_resolution_clock::now();
+        double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
+        tsp.selectionTime.totalTime += coreTime + syncTime;
     }
 
-    // ------------------------------
+    // ---------------------------------------------------------------------
     // 2) Crossover (CPU)
-    // ------------------------------
-    Offspring crossoverCPU(TSP &tsp, const ParentPairs &parentPairs) {
-        Offspring offspring(tsp.numIslands);
+    // Record core logic time (excluding syncOffspringFlatten)
+    // ---------------------------------------------------------------------
+    void crossoverCPU(TSP &tsp) {
+        auto t0 = high_resolution_clock::now();
+
+        tsp.offsprings.clear();
+        tsp.offsprings.resize(tsp.numIslands);
         std::mt19937 rng(std::random_device{}());
         std::uniform_real_distribution<float> probDist(0.0f, 1.0f);
         std::uniform_int_distribution<int> pointDist(0, tsp.numCities - 1);
 
         for (int island = 0; island < tsp.numIslands; island++) {
-            for (auto &pair : parentPairs[island]) {
+            for (auto &pair : tsp.parentPairs[island]) {
                 const Individual &pa = pair.first;
                 const Individual &pb = pair.second;
                 Individual child1 = pa, child2 = pb;
-
                 if (probDist(rng) < tsp.crossoverProbability) {
-                    // OX交叉
                     int point1 = pointDist(rng);
                     int point2 = pointDist(rng);
                     if (point1 > point2) std::swap(point1, point2);
-
                     std::vector<int> ch1(tsp.numCities, -1), ch2(tsp.numCities, -1);
                     for (int k = point1; k <= point2; k++) {
                         ch1[k] = pa.chromosome[k];
                         ch2[k] = pb.chromosome[k];
                     }
-                    // 填充 child1
                     int index = (point2 + 1) % tsp.numCities;
                     for (int k = 0; k < tsp.numCities; k++) {
                         int idx = (point2 + 1 + k) % tsp.numCities;
                         int gene = pb.chromosome[idx];
-                        if (std::find(ch1.begin(), ch1.end(), gene) == ch1.end()) {
+                        if (std::find(ch1.begin() + point1, ch1.begin() + point2 + 1, gene) == ch1.begin() + point2 + 1) {
                             ch1[index] = gene;
                             index = (index + 1) % tsp.numCities;
                         }
                     }
-                    // 填充 child2
                     index = (point2 + 1) % tsp.numCities;
                     for (int k = 0; k < tsp.numCities; k++) {
                         int idx = (point2 + 1 + k) % tsp.numCities;
                         int gene = pa.chromosome[idx];
-                        if (std::find(ch2.begin(), ch2.end(), gene) == ch2.end()) {
+                        if (std::find(ch2.begin() + point1, ch2.begin() + point2 + 1, gene) == ch2.begin() + point2 + 1) {
                             ch2[index] = gene;
                             index = (index + 1) % tsp.numCities;
                         }
@@ -94,26 +172,38 @@ namespace GA {
                     child1.chromosome = ch1;
                     child2.chromosome = ch2;
                 }
-                // 重置子代适应度
                 child1.fitness = 0.0f;
                 child2.fitness = 0.0f;
-
-                offspring[island].push_back(child1);
-                offspring[island].push_back(child2);
+                child1.islandID = pa.islandID;
+                child2.islandID = pa.islandID;
+                tsp.offsprings[island].push_back(child1);
+                tsp.offsprings[island].push_back(child2);
             }
         }
-        return offspring;
+        auto t1 = high_resolution_clock::now();
+        double coreTime = duration_cast<duration<double>>(t1 - t0).count();
+        tsp.crossoverTime.computeTime += coreTime;
+        tsp.crossoverTime.kernelTime += 0; // CPU only
+        // Sync part (not counted in computeTime)
+        auto t_sync0 = high_resolution_clock::now();
+        syncOffspringFlatten(tsp);
+        auto t_sync1 = high_resolution_clock::now();
+        double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
+        tsp.crossoverTime.totalTime += coreTime + syncTime;
     }
 
-    // ------------------------------
+    // ---------------------------------------------------------------------
     // 3) Mutation (CPU)
-    // ------------------------------
-    void mutationCPU(TSP &tsp, Offspring &offspring) {
+    // Record core logic time (excluding syncOffspringFlatten)
+    // ---------------------------------------------------------------------
+    void mutationCPU(TSP &tsp) {
+        auto t0 = high_resolution_clock::now();
+
         std::mt19937 rng(std::random_device{}());
         std::uniform_real_distribution<float> probDist(0.0f, 1.0f);
 
         for (int island = 0; island < tsp.numIslands; island++) {
-            for (auto &child : offspring[island]) {
+            for (auto &child : tsp.offsprings[island]) {
                 for (int i = 0; i < tsp.numCities; i++) {
                     if (probDist(rng) < tsp.mutationProbability) {
                         std::uniform_int_distribution<int> indexDist(0, tsp.numCities - 1);
@@ -123,52 +213,68 @@ namespace GA {
                 }
             }
         }
+        auto t1 = high_resolution_clock::now();
+        double coreTime = duration_cast<duration<double>>(t1 - t0).count();
+        tsp.mutationTime.computeTime += coreTime;
+        tsp.mutationTime.kernelTime += 0; // CPU only
+        auto t_sync0 = high_resolution_clock::now();
+        syncOffspringFlatten(tsp);
+        auto t_sync1 = high_resolution_clock::now();
+        double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
+        tsp.mutationTime.totalTime += coreTime + syncTime;
     }
 
-    // ------------------------------
+    // ---------------------------------------------------------------------
     // 4) Replacement (CPU)
-    // ------------------------------
-    void replacementCPU(TSP &tsp, const ParentPairs &parentPairs, const Offspring &offspring) {
-        for (int island = 0; island < tsp.numIslands; island++) {
-            for (size_t i = 0; i < parentPairs[island].size(); i++) {
-                Individual candidates[4] = {
-                    parentPairs[island][i].first,   // pa
-                    parentPairs[island][i].second,  // pb
-                    offspring[island][2*i],         // child1
-                    offspring[island][2*i + 1]      // child2
-                };
-                // 排序选出前两名
-                std::sort(candidates, candidates + 4,
-                          [](const Individual &a, const Individual &b) {
-                              return a.fitness > b.fitness; // 降序
-                          });
+    // Record core logic time (excluding flattenPopulationToHost)
+    // ---------------------------------------------------------------------
+    void replacementCPU(TSP &tsp) {
+        auto t0 = high_resolution_clock::now();
 
-                // 替换原种群中pa和pb
+        for (int island = 0; island < tsp.numIslands; island++) {
+            for (size_t i = 0; i < tsp.parentPairs[island].size(); i++) {
+                Individual candidates[4] = {
+                    tsp.parentPairs[island][i].first,
+                    tsp.parentPairs[island][i].second,
+                    tsp.offsprings[island][2 * i],
+                    tsp.offsprings[island][2 * i + 1]
+                };
+                std::sort(candidates, candidates + 4, [](const Individual &a, const Individual &b) {
+                    return a.fitness > b.fitness;
+                });
                 auto &pop = tsp.population[island];
                 for (auto &ind : pop) {
-                    if (ind.chromosome == parentPairs[island][i].first.chromosome) {
+                    if (ind.chromosome == tsp.parentPairs[island][i].first.chromosome) {
                         ind = candidates[0];
-                    } else if (ind.chromosome == parentPairs[island][i].second.chromosome) {
+                    } else if (ind.chromosome == tsp.parentPairs[island][i].second.chromosome) {
                         ind = candidates[1];
                     }
                 }
             }
         }
-        // 更新展平后的种群数据
+        auto t1 = high_resolution_clock::now();
+        double coreTime = duration_cast<duration<double>>(t1 - t0).count();
+        tsp.replacementTime.computeTime += coreTime;
+        tsp.replacementTime.kernelTime += 0; // CPU only
+        // Sync part: flattenPopulationToHost (not included in computeTime)
+        auto t_sync0 = high_resolution_clock::now();
         tsp.flattenPopulationToHost();
+        auto t_sync1 = high_resolution_clock::now();
+        double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
+        tsp.replacementTime.totalTime += coreTime + syncTime;
     }
 
-
-    // ------------------------------
+    // ---------------------------------------------------------------------
     // 5) Migration (CPU)
-    // ------------------------------
+    // Record core logic time (excluding flattenPopulationToHost)
+    // ---------------------------------------------------------------------
     void migrationCPU(TSP &tsp) {
-        // 简单的环状迁移示例
+        auto t0 = high_resolution_clock::now();
+
         int nIslands = tsp.numIslands;
         std::vector<Individual> bestInds(nIslands);
         std::vector<int> worstIndex(nIslands, -1);
 
-        // 找到每个岛最优个体与最差个体下标
         for (int island = 0; island < nIslands; island++) {
             float bestFit = -1e9, worstFit = 1e9;
             int wIdx = -1;
@@ -185,39 +291,65 @@ namespace GA {
             }
             worstIndex[island] = wIdx;
         }
-        // 迁移：把上一个岛的最优替换当前岛的最差
         for (int island = 0; island < nIslands; island++) {
             int prev = (island - 1 + nIslands) % nIslands;
             if (bestInds[prev].fitness > tsp.population[island][worstIndex[island]].fitness) {
                 tsp.population[island][worstIndex[island]] = bestInds[prev];
             }
         }
-        // 同步展平
+        auto t1 = high_resolution_clock::now();
+        double coreTime = duration_cast<duration<double>>(t1 - t0).count();
+        tsp.migrationTime.computeTime += coreTime;
+        tsp.migrationTime.kernelTime += 0; // CPU only
+        auto t_sync0 = high_resolution_clock::now();
         tsp.flattenPopulationToHost();
+        auto t_sync1 = high_resolution_clock::now();
+        double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
+        tsp.migrationTime.totalTime += coreTime + syncTime;
     }
 
-    // ------------------------------
-    // 更新种群适应度 (CPU)
-    // ------------------------------
+    // ---------------------------------------------------------------------
+    // 6) Update Population Fitness (CPU)
+    // Record core logic time (excluding flattenPopulationToHost)
+    // ---------------------------------------------------------------------
     void updatePopulationFitnessCPU(TSP &tsp) {
+        auto t0 = high_resolution_clock::now();
         for (int island = 0; island < tsp.numIslands; island++) {
             for (auto &ind : tsp.population[island]) {
                 ind.fitness = computeFitnessCPU(ind, tsp);
             }
         }
-        // 计算完毕后可以同步 populationFlat，无需更新染色体顺序，此处保留
-        // 如果某些kernel要用到fitness，也可考虑做额外操作
+        auto t1 = high_resolution_clock::now();
+        double coreTime = duration_cast<duration<double>>(t1 - t0).count();
+        tsp.updatePopulationFitnessTime.computeTime += coreTime;
+        tsp.updatePopulationFitnessTime.kernelTime += 0; // CPU only
+        auto t_sync0 = high_resolution_clock::now();
+        tsp.flattenPopulationToHost();
+        auto t_sync1 = high_resolution_clock::now();
+        double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
+        tsp.updatePopulationFitnessTime.totalTime += coreTime + syncTime;
     }
 
-    // ------------------------------
-    // 更新后代适应度 (CPU)
-    // ------------------------------
-    void updateOffspringFitnessCPU(TSP &tsp, Offspring &offspring) {
+    // ---------------------------------------------------------------------
+    // 7) Update Offspring Fitness (CPU)
+    // Record core logic time (excluding syncOffspringFlatten)
+    // ---------------------------------------------------------------------
+    void updateOffspringFitnessCPU(TSP &tsp) {
+        auto t0 = high_resolution_clock::now();
         for (int island = 0; island < tsp.numIslands; island++) {
-            for (auto &child : offspring[island]) {
+            for (auto &child : tsp.offsprings[island]) {
                 child.fitness = computeFitnessCPU(child, tsp);
             }
         }
+        auto t1 = high_resolution_clock::now();
+        double coreTime = duration_cast<duration<double>>(t1 - t0).count();
+        tsp.updateOffspringFitnessTime.computeTime += coreTime;
+        tsp.updateOffspringFitnessTime.kernelTime += 0; // CPU only
+        auto t_sync0 = high_resolution_clock::now();
+        syncOffspringFlatten(tsp);
+        auto t_sync1 = high_resolution_clock::now();
+        double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
+        tsp.updateOffspringFitnessTime.totalTime += coreTime + syncTime;
     }
 
 } // namespace GA

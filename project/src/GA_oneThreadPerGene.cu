@@ -573,7 +573,7 @@ void ga_one_thread_per_gene(
 
     for (unsigned i = 0; i < generation; i++) {
 
-        std::cout << "iteration " << i << std::endl;
+        // std::cout << "iteration " << i << std::endl;
 
         // {
         //     auto now_time_t = system_clock::to_time_t(system_clock::now());

@@ -6,14 +6,14 @@
 #include <algorithm>
 #include <cuda_runtime.h>
 
-// 计算欧几里得距离（内部使用）
+// Compute the Euclidean distance between two cities (internal use)
 static float euclideanDistance(const City &a, const City &b) {
     float dx = a.x - b.x;
     float dy = a.y - b.y;
     return std::sqrt(dx * dx + dy * dy);
 }
 
-// 构造函数
+// Constructor: Initializes the TSP instance with the given parameters
 TSP::TSP(int _numCities, int _popSize, int _mapSize, int _numIslands,
          float _parentSelectionRate, float _crossoverProbability, float _mutationProbability)
     : numCities(_numCities),
@@ -25,22 +25,23 @@ TSP::TSP(int _numCities, int _popSize, int _mapSize, int _numIslands,
       mutationProbability(_mutationProbability)
 {
     srand(static_cast<unsigned>(time(nullptr)));
-    // 1) 初始化城市与种群
+    // 1) Initialize cities and population
     initCities();
     initPopulation();
-    // 2) 计算距离矩阵
+    initTimeRecords();
+    // 2) Compute the distance matrix between cities
     computeDistanceMatrix();
-    // 3) 在 Host 上展平种群与距离矩阵
+    // 3) Flatten the population and distance matrix on the host side
     flattenPopulationToHost();
     flattenDistanceMatrixToHost();
-    // 4) 分配 GPU 缓冲区
+    // 4) Allocate GPU buffers
     allocateGPUBuffers();
-    // 并将数据复制到 GPU
+    // Copy the flattened data from host to GPU
     copyPopulationHostToDevice();
     copyDistanceMatrixHostToDevice();
 }
 
-// 随机生成城市坐标
+// Randomly generate city coordinates and store them in the 'cities' vector
 void TSP::initCities() {
     cities.resize(numCities);
     for (int i = 0; i < numCities; i++) {
@@ -52,7 +53,8 @@ void TSP::initCities() {
     }
 }
 
-// 初始化种群：将总种群均分到各个岛中，随机打乱染色体
+// Initialize the population by evenly dividing the total population among islands
+// and randomly shuffling each individual's chromosome.
 void TSP::initPopulation() {
     population.resize(numIslands);
     int baseCount = popSize / numIslands;
@@ -67,18 +69,50 @@ void TSP::initPopulation() {
         for (int i = 0; i < islandPop; i++) {
             Individual &ind = population[island][i];
             ind.chromosome.resize(numCities);
+            // Initialize chromosome with sequential city indices
             for (int j = 0; j < numCities; j++) {
                 ind.chromosome[j] = j;
             }
+            // Shuffle the chromosome to create a random tour
             std::shuffle(ind.chromosome.begin(), ind.chromosome.end(), g);
-            ind.fitness = 0.0f;
+            ind.fitness = 0.0f; // Initial fitness set to 0
             ind.islandID = island;
             popAssigned++;
         }
     }
 }
 
-// 计算距离矩阵
+void TSP::initTimeRecords() {
+    selectionTime.computeTime = 0.0;
+    selectionTime.kernelTime  = 0.0;
+    selectionTime.totalTime   = 0.0;
+
+    crossoverTime.computeTime = 0.0;
+    crossoverTime.kernelTime  = 0.0;
+    crossoverTime.totalTime   = 0.0;
+
+    mutationTime.computeTime  = 0.0;
+    mutationTime.kernelTime   = 0.0;
+    mutationTime.totalTime    = 0.0;
+
+    replacementTime.computeTime = 0.0;
+    replacementTime.kernelTime  = 0.0;
+    replacementTime.totalTime   = 0.0;
+
+    migrationTime.computeTime = 0.0;
+    migrationTime.kernelTime  = 0.0;
+    migrationTime.totalTime   = 0.0;
+
+    updatePopulationFitnessTime.computeTime = 0.0;
+    updatePopulationFitnessTime.kernelTime  = 0.0;
+    updatePopulationFitnessTime.totalTime   = 0.0;
+
+    updateOffspringFitnessTime.computeTime = 0.0;
+    updateOffspringFitnessTime.kernelTime  = 0.0;
+    updateOffspringFitnessTime.totalTime   = 0.0;
+}
+
+// Compute the distance matrix between every pair of cities
 void TSP::computeDistanceMatrix() {
     distanceMatrix.resize(numCities, std::vector<float>(numCities, 0.0f));
     for (int i = 0; i < numCities; i++) {
@@ -88,12 +122,13 @@ void TSP::computeDistanceMatrix() {
     }
 }
 
-// 将 population 展平到 populationFlat
+// Flatten the population into a one-dimensional array 'populationFlat'
+// The order is: all individuals from island 0, then island 1, and so on.
 void TSP::flattenPopulationToHost() {
     populationFlat.clear();
     populationFlat.reserve(popSize * numCities);
 
-    // 依次遍历每个岛
+    // Iterate through each island
     for (int island = 0; island < numIslands; island++) {
         for (auto &ind : population[island]) {
             for (int c = 0; c < numCities; c++) {
@@ -103,7 +138,7 @@ void TSP::flattenPopulationToHost() {
     }
 }
 
-// 将 distanceMatrix 展平到 distanceMatrixFlat (row-major)
+// Flatten the distance matrix into a one-dimensional array 'distanceMatrixFlat' in row-major order.
 void TSP::flattenDistanceMatrixToHost() {
     distanceMatrixFlat.clear();
     distanceMatrixFlat.reserve(numCities * numCities);
@@ -114,36 +149,52 @@ void TSP::flattenDistanceMatrixToHost() {
     }
 }
 
-// 统一分配 GPU 缓冲区
+// Allocate GPU buffers for the flattened data and other required arrays.
 void TSP::allocateGPUBuffers() {
-    // 距离矩阵
+    // Allocate GPU buffer for the flattened distance matrix
     cudaMalloc(&d_distanceMatrix, distanceMatrixFlat.size() * sizeof(float));
-    // 种群
+    // Allocate GPU buffer for the flattened population
     cudaMalloc(&d_population, populationFlat.size() * sizeof(int));
     cudaMalloc(&d_populationFitness, popSize * sizeof(float));
-    // parent A / B
+    // Allocate GPU buffers for parent A and parent B data
     cudaMalloc(&d_parentA, popSize * numCities * sizeof(int));
     cudaMalloc(&d_parentB, popSize * numCities * sizeof(int));
-    cudaMalloc(&d_parentFitness, 2 * popSize * sizeof(float)); // 最多2*popSize个父代
-    // child buffer
+    cudaMalloc(&d_parentFitness, 2 * popSize * sizeof(float)); // Up to 2*popSize parent individuals
+    // Allocate GPU buffers for children (resulting from crossover)
     cudaMalloc(&d_child1, popSize * numCities * sizeof(int));
     cudaMalloc(&d_child2, popSize * numCities * sizeof(int));
-    // offspring
+    // Allocate GPU buffers for offspring data
     cudaMalloc(&d_offspring, 2 * popSize * numCities * sizeof(int));
     cudaMalloc(&d_offspringFitness, 2 * popSize * sizeof(float));
-    // replacement
+    // Allocate GPU buffers for replacement operation
     cudaMalloc(&d_parentChromosomes, 2 * popSize * numCities * sizeof(int));
     cudaMalloc(&d_offspringChromosomes, 2 * popSize * numCities * sizeof(int));
 }
 
-// 将 Host 上的 populationFlat 拷贝到 GPU
+// Copy the flattened population data from the host to the GPU.
 void TSP::copyPopulationHostToDevice() {
     cudaMemcpy(d_population, populationFlat.data(),
                populationFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
 }
 
-// 将 Host 上的 distanceMatrixFlat 拷贝到 GPU
+// Copy the flattened distance matrix from the host to the GPU.
 void TSP::copyDistanceMatrixHostToDevice() {
     cudaMemcpy(d_distanceMatrix, distanceMatrixFlat.data(),
                distanceMatrixFlat.size() * sizeof(float), cudaMemcpyHostToDevice);
+}
+
+// Destructor: Release all allocated GPU buffers.
+TSP::~TSP() {
+    cudaFree(d_distanceMatrix);
+    cudaFree(d_population);
+    cudaFree(d_populationFitness);
+    cudaFree(d_parentA);
+    cudaFree(d_parentB);
+    cudaFree(d_parentFitness);
+    cudaFree(d_child1);
+    cudaFree(d_child2);
+    cudaFree(d_offspring);
+    cudaFree(d_offspringFitness);
+    cudaFree(d_parentChromosomes);
+    cudaFree(d_offspringChromosomes);
 }
