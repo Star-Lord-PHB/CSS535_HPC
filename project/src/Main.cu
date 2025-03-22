@@ -95,24 +95,26 @@ GAResult runOneGenePerThread(TSP& tsp, const int generations) {
         &totalTime
     );
 
-    // unsigned bestIslandId = 0;
-    // unsigned bestIndividualId = 0;
+    unsigned bestIslandId = 0;
+    unsigned bestIndividualId = 0;
     double bestFitness = INFINITY;
     for (unsigned islandId = 0; islandId < solution->xSize(); islandId++) {
         for (unsigned individualId = 0; individualId < solution->ySize(); individualId++) {
             const auto fitness = *reinterpret_cast<float*>(&solution->at(islandId, individualId, tsp.numCities));
             if (fitness < bestFitness) {
-                // bestIslandId = islandId;
-                // bestIndividualId = individualId;
+                bestIslandId = islandId;
+                bestIndividualId = individualId;
                 bestFitness = fitness;
             }
         }
     }
 
-    // const auto bestIndividual = std::vector(
-    //     &solution->at(bestIslandId, bestIndividualId, 0),
-    //     &solution->at(bestIslandId, bestIndividualId, tsp.numCities - 1)
-    // );
+    const auto bestIndividual = std::vector(
+        &solution->at(bestIslandId, bestIndividualId, 0),
+        &solution->at(bestIslandId, bestIndividualId, tsp.numCities - 1)
+    );
+
+
 
     auto result = GAResult();
     result.strategyName = "ONE_GENE_PRE_THREAD";

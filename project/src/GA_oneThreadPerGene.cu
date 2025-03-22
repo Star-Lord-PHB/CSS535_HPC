@@ -101,19 +101,15 @@ __device__ void calculate_fitness(
     float* const output
 ) {
 
-    auto threadIncluded = spec.geneId < spec.chromosomeLength - 1;
-
-    if (threadIncluded && spec.geneId < spec.chromosomeLength - 1) {
-        auto geneId = spec.geneId;
-        fitnessCalcSpace[geneId] = distanceMat.at(individual[geneId], individual[geneId + 1]);
-    }
+    auto geneId = spec.geneId;
+    fitnessCalcSpace[geneId] = distanceMat.at(individual[geneId], individual[(geneId + 1) % spec.chromosomeLength]);
 
     __syncthreads();
 
-    for (auto step = 1; step < spec.chromosomeLength - 1; step <<= 1) {
+    for (auto step = 1; step < spec.chromosomeLength; step <<= 1) {
         if (spec.geneId % (step << 1) == 0) {
             auto pairGeneId = spec.geneId ^ step;
-            if (pairGeneId < spec.chromosomeLength - 1) {
+            if (pairGeneId < spec.chromosomeLength) {
                 fitnessCalcSpace[spec.geneId] += fitnessCalcSpace[pairGeneId];
             }
         }
