@@ -11,13 +11,14 @@ enum class Implementation { CPU, CUDA };
 
 // Function set structure to hold GA function pointers
 struct GAFunctionSet {
-    ParentPairs (*selection)(TSP &);
-    Offspring (*crossover)(TSP &, const ParentPairs &);
-    void (*mutation)(TSP &, Offspring &);
-    void (*replacement)(TSP &, const ParentPairs &, const Offspring &);
+    void (*selection)(TSP &);
+    void (*crossover)(TSP &);
+    void (*mutation)(TSP &);
+    void (*replacement)(TSP &);
     void (*migration)(TSP &);
     void (*updatePopulationFitness)(TSP &);
-    void (*updateOffspringFitness)(TSP &, Offspring &);
+    void (*updateOffspringFitness)(TSP &);
+
 };
 
 int main() {
@@ -48,7 +49,7 @@ int main() {
         gaFuncs.selection = GA::selectionCUDA;
         gaFuncs.crossover = GA::crossoverCUDA;
         gaFuncs.mutation = GA::mutationCUDA;
-        gaFuncs.replacement = GA::replacementCUDA;
+        gaFuncs.replacement = GA::replacementCPU;
         gaFuncs.migration = GA::migrationCUDA;
         gaFuncs.updatePopulationFitness = GA::updatePopulationFitnessCUDA;
         gaFuncs.updateOffspringFitness = GA::updateOffspringFitnessCUDA;
@@ -66,35 +67,32 @@ int main() {
 
     // Main GA loop over generations
     for (int gen = 0; gen < generations; gen++) {
-        // Selection: pair parents within each island
-        auto parentPairs = gaFuncs.selection(tsp);
-        // Crossover: generate offspring from parent pairs
-        auto offspring = gaFuncs.crossover(tsp, parentPairs);
-        // Mutation: apply mutation to the offspring
-        gaFuncs.mutation(tsp, offspring);
-
-        // Update fitness for the newly generated offspring only
-        gaFuncs.updateOffspringFitness(tsp, offspring);
-
-        // Replacement: replace poorer parents with the better individuals chosen from parents and offspring
-        gaFuncs.replacement(tsp, parentPairs, offspring);
-
-        // Migration: exchange individuals among islands (if applicable)
+        // Selection: update tsp.parentPairs and parentPairCount.
+        gaFuncs.selection(tsp);
+        // Crossover: update tsp.offsprings and the flattened offspring array.
+        gaFuncs.crossover(tsp);
+        // Mutation: mutate tsp.offsprings.
+        gaFuncs.mutation(tsp);
+        // Update offspring fitness (only for the new offsprings).
+        gaFuncs.updateOffspringFitness(tsp);
+        // Replacement: update tsp.population based on the best individuals from parents and offsprings.
+        gaFuncs.replacement(tsp);
+        // Migration: perform inter-island migration.
         gaFuncs.migration(tsp);
-
-        // Update the fitness for the entire population after replacement and migration
+        // Update the entire population's fitness.
         gaFuncs.updatePopulationFitness(tsp);
 
+
         std::cout << "Generation " << gen << " complete." << std::endl;
-        // Optionally, print the best fitness on each island
-        // for (int island = 0; island < tsp.numIslands; island++) {
-        //     float bestFit = -1.0f;
-        //     for (const auto &ind : tsp.population[island]) {
-        //         if (ind.fitness > bestFit)
-        //             bestFit = ind.fitness;
-        //     }
-        //     std::cout << "  Island " << island << " best fitness: " << bestFit << std::endl;
-        // }
+
+        for (int island = 0; island < tsp.numIslands; island++) {
+            float bestFit = -1.0f;
+            for (const auto &ind : tsp.population[island]) {
+                if (ind.fitness > bestFit)
+                    bestFit = ind.fitness;
+            }
+            std::cout << "  Island " << island << " best fitness: " << bestFit << std::endl;
+        }
     }
 
     // Record end time for GA iterations
