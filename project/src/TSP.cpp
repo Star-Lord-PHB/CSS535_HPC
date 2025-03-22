@@ -28,6 +28,7 @@ TSP::TSP(int _numCities, int _popSize, int _mapSize, int _numIslands,
     // 1) Initialize cities and population
     initCities();
     initPopulation();
+    initTimeRecords();
     // 2) Compute the distance matrix between cities
     computeDistanceMatrix();
     // 3) Flatten the population and distance matrix on the host side
@@ -79,6 +80,36 @@ void TSP::initPopulation() {
             popAssigned++;
         }
     }
+}
+
+void TSP::initTimeRecords() {
+    selectionTime.computeTime = 0.0;
+    selectionTime.kernelTime  = 0.0;
+    selectionTime.totalTime   = 0.0;
+
+    crossoverTime.computeTime = 0.0;
+    crossoverTime.kernelTime  = 0.0;
+    crossoverTime.totalTime   = 0.0;
+
+    mutationTime.computeTime  = 0.0;
+    mutationTime.kernelTime   = 0.0;
+    mutationTime.totalTime    = 0.0;
+
+    replacementTime.computeTime = 0.0;
+    replacementTime.kernelTime  = 0.0;
+    replacementTime.totalTime   = 0.0;
+
+    migrationTime.computeTime = 0.0;
+    migrationTime.kernelTime  = 0.0;
+    migrationTime.totalTime   = 0.0;
+
+    updatePopulationFitnessTime.computeTime = 0.0;
+    updatePopulationFitnessTime.kernelTime  = 0.0;
+    updatePopulationFitnessTime.totalTime   = 0.0;
+
+    updateOffspringFitnessTime.computeTime = 0.0;
+    updateOffspringFitnessTime.kernelTime  = 0.0;
+    updateOffspringFitnessTime.totalTime   = 0.0;
 }
 
 // Compute the distance matrix between every pair of cities

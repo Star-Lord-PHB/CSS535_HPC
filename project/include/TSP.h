@@ -112,6 +112,7 @@ public:
     void initCities();
     void initPopulation();
     void computeDistanceMatrix();
+    void initTimeRecords();
 
     // Functions to flatten the population and distance matrix to one-dimensional arrays
     // and to allocate GPU buffers using cudaMalloc.

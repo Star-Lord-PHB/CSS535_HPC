@@ -273,7 +273,7 @@ int main() {
     int popSize = 1024;
     int mapSize = 1000;
     int numIslands = 64;
-    float parentSelectionRate = 0.5f;
+    float parentSelectionRate = 1.0f;
     float crossoverProbability = 0.7f;
     float mutationProbability = 0.05f;
     int generations = 500;

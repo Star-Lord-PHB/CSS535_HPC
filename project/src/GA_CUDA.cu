@@ -211,9 +211,9 @@ void selectionCUDA(TSP &tsp) {
     // 此处无数据映射回CPU，所以 totalTime = compTime
     auto total_end = high_resolution_clock::now();
     double totTime = duration_cast<duration<double>>(total_end - total_start).count();
-    tsp.selectionTime.computeTime = compTime;
-    tsp.selectionTime.kernelTime = 0;
-    tsp.selectionTime.totalTime = totTime;
+    tsp.selectionTime.computeTime += compTime;
+    tsp.selectionTime.kernelTime += 0;
+    tsp.selectionTime.totalTime += totTime;
 }
 
 // crossoverCUDA: 包括 CPU->GPU传输、内核执行、以及将结果映射回 CPU（映射部分不计入 computeTime）
@@ -235,9 +235,9 @@ void crossoverCUDA(TSP &tsp) {
         double compTime = duration_cast<duration<double>>(compute_end - compute_start).count();
         auto total_end = high_resolution_clock::now();
         double totTime = duration_cast<duration<double>>(total_end - total_start).count();
-        tsp.crossoverTime.computeTime = compTime;
-        tsp.crossoverTime.kernelTime = 0;
-        tsp.crossoverTime.totalTime = totTime;
+        tsp.crossoverTime.computeTime += compTime;
+        tsp.crossoverTime.kernelTime += 0;
+        tsp.crossoverTime.totalTime += totTime;
         return;
     }
     int threads = 256;
@@ -294,9 +294,9 @@ void crossoverCUDA(TSP &tsp) {
     double mappingTime = duration_cast<duration<double>>(mapping_end - mapping_start).count();
     auto total_end = high_resolution_clock::now();
     double totTime = duration_cast<duration<double>>(total_end - total_start).count();
-    tsp.crossoverTime.computeTime = compTime;  // 不包含 CPU 映射
-    tsp.crossoverTime.kernelTime = kTime;
-    tsp.crossoverTime.totalTime = totTime;
+    tsp.crossoverTime.computeTime += compTime;  // 不包含 CPU 映射
+    tsp.crossoverTime.kernelTime += kTime;
+    tsp.crossoverTime.totalTime += totTime;
     tsp.offsprings = offsprings;
 }
 
@@ -352,9 +352,9 @@ void mutationCUDA(TSP &tsp) {
     double mappingTime = duration_cast<duration<double>>(mapping_end - mapping_start).count();
     auto total_end = high_resolution_clock::now();
     double totTime = duration_cast<duration<double>>(total_end - total_start).count();
-    tsp.mutationTime.computeTime = compTime;
-    tsp.mutationTime.kernelTime = kTime;
-    tsp.mutationTime.totalTime = totTime;
+    tsp.mutationTime.computeTime += compTime;
+    tsp.mutationTime.kernelTime += kTime;
+    tsp.mutationTime.totalTime += totTime;
 }
 
 // updateOffspringFitnessCUDA: 包括内核执行和 CPU 更新 offspring fitness；不计入同步到 offspring结构的时间
@@ -406,9 +406,9 @@ void updateOffspringFitnessCUDA(TSP &tsp) {
     double mappingTime = duration_cast<duration<double>>(mapping_end - mapping_start).count();
     auto total_end = high_resolution_clock::now();
     double totTime = duration_cast<duration<double>>(total_end - total_start).count();
-    tsp.updateOffspringFitnessTime.computeTime = compTime;
-    tsp.updateOffspringFitnessTime.kernelTime = kTime;
-    tsp.updateOffspringFitnessTime.totalTime = totTime;
+    tsp.updateOffspringFitnessTime.computeTime += compTime;
+    tsp.updateOffspringFitnessTime.kernelTime += kTime;
+    tsp.updateOffspringFitnessTime.totalTime += totTime;
 }
 
 // updatePopulationFitnessCUDA: 包括内核执行和 CPU 更新 population fitness；不计入将数据映射回 CPU 结构的时间
@@ -450,9 +450,9 @@ void updatePopulationFitnessCUDA(TSP &tsp) {
     double mappingTime = duration_cast<duration<double>>(mapping_end - mapping_start).count();
     auto total_end = high_resolution_clock::now();
     double totTime = duration_cast<duration<double>>(total_end - total_start).count();
-    tsp.updatePopulationFitnessTime.computeTime = compTime; // 不包含CPU映射部分
-    tsp.updatePopulationFitnessTime.kernelTime = kTime;
-    tsp.updatePopulationFitnessTime.totalTime = totTime;
+    tsp.updatePopulationFitnessTime.computeTime += compTime; // 不包含CPU映射部分
+    tsp.updatePopulationFitnessTime.kernelTime += kTime;
+    tsp.updatePopulationFitnessTime.totalTime += totTime;
 }
 
 // replacementCUDA: 包括内核执行和 CPU 更新 population 数据；CPU映射部分不计入 computeTime
@@ -511,9 +511,9 @@ void replacementCUDA(TSP &tsp) {
     double mappingTime = duration_cast<duration<double>>(mapping_end - mapping_start).count();
     auto total_end = high_resolution_clock::now();
     double totTime = duration_cast<duration<double>>(total_end - total_start).count();
-    tsp.replacementTime.computeTime = compTime; // 不扣除CPU映射时间
-    tsp.replacementTime.kernelTime = kTime;
-    tsp.replacementTime.totalTime = totTime;
+    tsp.replacementTime.computeTime += compTime; // 不扣除CPU映射时间
+    tsp.replacementTime.kernelTime += kTime;
+    tsp.replacementTime.totalTime += totTime;
 }
 
 // migrationCUDA: 调用 CPU 版本的 migrationCPU，并计时（此处全部计入）
@@ -529,9 +529,9 @@ void migrationCUDA(TSP &tsp) {
     double mappingTime = duration_cast<duration<double>>(mapping_end - mapping_start).count();
     auto total_end = high_resolution_clock::now();
     double totTime = duration_cast<duration<double>>(total_end - total_start).count();
-    tsp.migrationTime.computeTime = compTime;
-    tsp.migrationTime.kernelTime = 0;
-    tsp.migrationTime.totalTime = totTime;
+    tsp.migrationTime.computeTime += compTime;
+    tsp.migrationTime.kernelTime += 0;
+    tsp.migrationTime.totalTime += totTime;
 }
 
 } // namespace GA

@@ -112,14 +112,14 @@ namespace GA {
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
         // 记录核心逻辑时间，不包含同步时间
-        tsp.selectionTime.computeTime = coreTime;
-        tsp.selectionTime.kernelTime = 0; // CPU无内核调用
+        tsp.selectionTime.computeTime += coreTime;
+        tsp.selectionTime.kernelTime += 0; // CPU无内核调用
         // 同步部分另行测量，不计入 computeTime
         auto t_sync0 = high_resolution_clock::now();
         syncParentFlatten(tsp);
         auto t_sync1 = high_resolution_clock::now();
         double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
-        tsp.selectionTime.totalTime = coreTime + syncTime;
+        tsp.selectionTime.totalTime += coreTime + syncTime;
     }
 
     // ---------------------------------------------------------------------
@@ -180,14 +180,14 @@ namespace GA {
         }
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
-        tsp.crossoverTime.computeTime = coreTime;
-        tsp.crossoverTime.kernelTime = 0;
+        tsp.crossoverTime.computeTime += coreTime;
+        tsp.crossoverTime.kernelTime += 0;
         // 同步部分：不计入 coreTime
         auto t_sync0 = high_resolution_clock::now();
         syncOffspringFlatten(tsp);
         auto t_sync1 = high_resolution_clock::now();
         double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
-        tsp.crossoverTime.totalTime = coreTime + syncTime;
+        tsp.crossoverTime.totalTime += coreTime + syncTime;
     }
 
     // ---------------------------------------------------------------------
@@ -213,13 +213,13 @@ namespace GA {
         }
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
-        tsp.mutationTime.computeTime = coreTime;
-        tsp.mutationTime.kernelTime = 0;
+        tsp.mutationTime.computeTime += coreTime;
+        tsp.mutationTime.kernelTime += 0;
         auto t_sync0 = high_resolution_clock::now();
         syncOffspringFlatten(tsp);
         auto t_sync1 = high_resolution_clock::now();
         double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
-        tsp.mutationTime.totalTime = coreTime + syncTime;
+        tsp.mutationTime.totalTime += coreTime + syncTime;
     }
 
     // ---------------------------------------------------------------------
@@ -252,13 +252,13 @@ namespace GA {
         }
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
-        tsp.replacementTime.computeTime = coreTime;
-        tsp.replacementTime.kernelTime = 0;
+        tsp.replacementTime.computeTime += coreTime;
+        tsp.replacementTime.kernelTime += 0;
         auto t_sync0 = high_resolution_clock::now();
         tsp.flattenPopulationToHost();
         auto t_sync1 = high_resolution_clock::now();
         double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
-        tsp.replacementTime.totalTime = coreTime + syncTime;
+        tsp.replacementTime.totalTime += coreTime + syncTime;
     }
 
     // ---------------------------------------------------------------------
@@ -296,13 +296,13 @@ namespace GA {
         }
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
-        tsp.migrationTime.computeTime = coreTime;
-        tsp.migrationTime.kernelTime = 0;
+        tsp.migrationTime.computeTime += coreTime;
+        tsp.migrationTime.kernelTime += 0;
         auto t_sync0 = high_resolution_clock::now();
         tsp.flattenPopulationToHost();
         auto t_sync1 = high_resolution_clock::now();
         double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
-        tsp.migrationTime.totalTime = coreTime + syncTime;
+        tsp.migrationTime.totalTime += coreTime + syncTime;
     }
 
     // ---------------------------------------------------------------------
@@ -318,13 +318,13 @@ namespace GA {
         }
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
-        tsp.updatePopulationFitnessTime.computeTime = coreTime;
-        tsp.updatePopulationFitnessTime.kernelTime = 0;
+        tsp.updatePopulationFitnessTime.computeTime += coreTime;
+        tsp.updatePopulationFitnessTime.kernelTime += 0;
         auto t_sync0 = high_resolution_clock::now();
         tsp.flattenPopulationToHost();
         auto t_sync1 = high_resolution_clock::now();
         double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
-        tsp.updatePopulationFitnessTime.totalTime = coreTime + syncTime;
+        tsp.updatePopulationFitnessTime.totalTime += coreTime + syncTime;
     }
 
     // ---------------------------------------------------------------------
@@ -340,13 +340,13 @@ namespace GA {
         }
         auto t1 = high_resolution_clock::now();
         double coreTime = duration_cast<duration<double>>(t1 - t0).count();
-        tsp.updateOffspringFitnessTime.computeTime = coreTime;
-        tsp.updateOffspringFitnessTime.kernelTime = 0;
+        tsp.updateOffspringFitnessTime.computeTime += coreTime;
+        tsp.updateOffspringFitnessTime.kernelTime += 0;
         auto t_sync0 = high_resolution_clock::now();
         syncOffspringFlatten(tsp);
         auto t_sync1 = high_resolution_clock::now();
         double syncTime = duration_cast<duration<double>>(t_sync1 - t_sync0).count();
-        tsp.updateOffspringFitnessTime.totalTime = coreTime + syncTime;
+        tsp.updateOffspringFitnessTime.totalTime =+ coreTime + syncTime;
     }
 
 } // namespace GA
