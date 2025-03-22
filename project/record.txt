@@ -3,7 +3,7 @@ cpu vs gpu
 个体 vs 基因
 
 - 并行化不同的环节
-- CUDA configuration
+- CUDA configuration: thread数量
 
 
 metric：

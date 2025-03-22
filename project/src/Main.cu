@@ -340,7 +340,8 @@ int main() {
     float mutationProbability = 0.05f;
     int generations = 500;
 
-    constexpr bool runOneGenePerThreadImplementation = true;
+    constexpr bool runOneGenePerThreadImplementation = false;
+    constexpr bool runOneIndividualPerThreadImplementation = false;
 
     if (runOneGenePerThreadImplementation) {
 
@@ -358,60 +359,65 @@ int main() {
         return 0;
 
     }
+    if (runOneGenePerThreadImplementation) {
+        // Strategy list
+        std::vector strategies = {
+            Implementation::CPU,
+            Implementation::CUDA,
+            Implementation::CUDA_SELECTION,
+            Implementation::CUDA_CROSS,
+            Implementation::CUDA_MUTATION,
+            Implementation::CUDA_REPLACEMENT,
+            Implementation::CUDA_MIGRATION,
+            Implementation::CUDA_UPDATE_POPULATION,
+            Implementation::CUDA_UPDATE_OFFSPRING,
+            Implementation::CUDA_UPDATE_ALL_FITNESS
+        };
 
-    // Strategy list
-    std::vector strategies = {
-        Implementation::CPU,
-        Implementation::CUDA,
-        Implementation::CUDA_SELECTION,
-        Implementation::CUDA_CROSS,
-        Implementation::CUDA_MUTATION,
-        Implementation::CUDA_REPLACEMENT,
-        Implementation::CUDA_MIGRATION,
-        Implementation::CUDA_UPDATE_POPULATION,
-        Implementation::CUDA_UPDATE_OFFSPRING,
-        Implementation::CUDA_UPDATE_ALL_FITNESS
-    };
+        // Open CSV file to write data
+        std::ofstream outfile("E:\\Cat\\Study\\UW\\CSS 535 High Performance Computing\\CSS535_HPC\\project\\data.csv");
+        outfile << "strategy,best_fitness,total_time,numCities,popSize,mapSize,numIslands,parentSelectionRate,crossoverProbability,mutationProbability,generations,"
+                << "sel_compute,sel_kernel,sel_total,"
+                << "cross_compute,cross_kernel,cross_total,"
+                << "mut_compute,mut_kernel,mut_total,"
+                << "repl_compute,repl_kernel,repl_total,"
+                << "mig_compute,mig_kernel,mig_total,"
+                << "updPop_compute,updPop_kernel,updPop_total,"
+                << "updOff_compute,updOff_kernel,updOff_total,"
+                << "compute_time,kernel_time,total_time\n";
 
-    // Open CSV file to write data
-    std::ofstream outfile("D://CSS535//CSS535_HPC//project//data.csv");
-    outfile << "strategy,best_fitness,total_time,numCities,popSize,mapSize,numIslands,parentSelectionRate,crossoverProbability,mutationProbability,generations,"
-            << "sel_compute,sel_kernel,sel_total,"
-            << "cross_compute,cross_kernel,cross_total,"
-            << "mut_compute,mut_kernel,mut_total,"
-            << "repl_compute,repl_kernel,repl_total,"
-            << "mig_compute,mig_kernel,mig_total,"
-            << "updPop_compute,updPop_kernel,updPop_total,"
-            << "updOff_compute,updOff_kernel,updOff_total\n";
+        // Iterate through each strategy, run GA, and write results
+        for (auto impl : strategies) {
+            GAResult res = run_strategy(impl, numCities, popSize, mapSize, numIslands,
+                                        parentSelectionRate, crossoverProbability, mutationProbability, generations);
+            outfile << res.strategyName << ","
+                    << res.bestFitness << ","
+                    << res.totalTime << ","
+                    << res.numCities << ","
+                    << res.popSize << ","
+                    << res.mapSize << ","
+                    << res.numIslands << ","
+                    << res.parentSelectionRate << ","
+                    << res.crossoverProbability << ","
+                    << res.mutationProbability << ","
+                    << res.generations << ","
+                    << res.sel_compute << "," << res.sel_kernel << "," << res.sel_total << ","
+                    << res.cross_compute << "," << res.cross_kernel << "," << res.cross_total << ","
+                    << res.mut_compute << "," << res.mut_kernel << "," << res.mut_total << ","
+                    << res.repl_compute << "," << res.repl_kernel << "," << res.repl_total << ","
+                    << res.mig_compute << "," << res.mig_kernel << "," << res.mig_total << ","
+                    << res.updPop_compute << "," << res.updPop_kernel << "," << res.updPop_total << ","
+                    << res.updOff_compute << "," << res.updOff_kernel << "," << res.updOff_total
+                    << "," << res.sel_compute + res.cross_compute + res.mut_compute +  res.repl_compute + res.mig_compute + res.updPop_compute + res.updOff_compute << ","
+                    << res.sel_kernel + res.cross_kernel + res.mut_kernel +  res.repl_kernel + res.mig_kernel + res.updPop_kernel + res.updOff_kernel << ","
+                    << res.sel_total + res.cross_total + res.mut_total +  res.repl_total + res.mig_total + res.updPop_total + res.updOff_total
+                    << "\n";
+            std::cout << "Finished strategy " << res.strategyName
+                      << ": best fitness = " << res.bestFitness
+                      << ", total time = " << res.totalTime << " seconds."
+                      << std::endl;
+        }
 
-    // Iterate through each strategy, run GA, and write results
-    for (auto impl : strategies) {
-        GAResult res = run_strategy(impl, numCities, popSize, mapSize, numIslands,
-                                    parentSelectionRate, crossoverProbability, mutationProbability, generations);
-        outfile << res.strategyName << ","
-                << res.bestFitness << ","
-                << res.totalTime << ","
-                << res.numCities << ","
-                << res.popSize << ","
-                << res.mapSize << ","
-                << res.numIslands << ","
-                << res.parentSelectionRate << ","
-                << res.crossoverProbability << ","
-                << res.mutationProbability << ","
-                << res.generations << ","
-                << res.sel_compute << "," << res.sel_kernel << "," << res.sel_total << ","
-                << res.cross_compute << "," << res.cross_kernel << "," << res.cross_total << ","
-                << res.mut_compute << "," << res.mut_kernel << "," << res.mut_total << ","
-                << res.repl_compute << "," << res.repl_kernel << "," << res.repl_total << ","
-                << res.mig_compute << "," << res.mig_kernel << "," << res.mig_total << ","
-                << res.updPop_compute << "," << res.updPop_kernel << "," << res.updPop_total << ","
-                << res.updOff_compute << "," << res.updOff_kernel << "," << res.updOff_total
-                << "\n";
-        std::cout << "Finished strategy " << res.strategyName
-                  << ": best fitness = " << res.bestFitness
-                  << ", total time = " << res.totalTime << " seconds."
-                  << std::endl;
+        outfile.close();
     }
-
-    outfile.close();
 }
