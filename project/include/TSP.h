@@ -2,11 +2,10 @@
 #define TSP_H
 
 #include <vector>
-// 定义一个时间记录结构体
 struct TimeRecord {
-    double computeTime; // 核心计算（CPU 逻辑）时间，不包括数据同步或传输时间
-    double kernelTime;  // CUDA 内核执行时间（仅适用于采用 CUDA 的步骤）
-    double totalTime;   // 该环节总时间（包括数据传输、同步等）
+    double computeTime;
+    double kernelTime;
+    double totalTime;
 };
 
 // City structure: represents a city with an ID and coordinates.
