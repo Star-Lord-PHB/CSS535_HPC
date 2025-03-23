@@ -250,7 +250,7 @@ void crossoverCUDA(TSP &tsp) {
         tsp.crossoverTime.totalTime += totTime;
         return;
     }
-    int threads = 128;
+    int threads = 256;
     int blocks = (totalPairs + threads - 1) / threads;
     unsigned long seed = time(nullptr);
 
@@ -326,7 +326,7 @@ void mutationCUDA(TSP &tsp) {
     // Transfer offspring data from CPU to GPU (included in computeTime)
     cudaMemcpy(tsp.d_offspring, tsp.offspringFlat.data(), totalGenes * sizeof(int), cudaMemcpyHostToDevice);
 
-    int threads = 128;
+    int threads = 256;
     int blocks = (totalOffspring + threads - 1) / threads;
     unsigned long seed = time(nullptr);
 
@@ -385,7 +385,7 @@ void updateOffspringFitnessCUDA(TSP &tsp) {
     // Transfer offspring data from CPU to GPU (included in computeTime)
     cudaMemcpy(tsp.d_offspring, tsp.offspringFlat.data(), totalGenes * sizeof(int), cudaMemcpyHostToDevice);
 
-    int threads = 128;
+    int threads = 256;
     int blocks = (totalOffspring + threads - 1) / threads;
 
     // Record kernel execution time
@@ -433,7 +433,7 @@ void updatePopulationFitnessCUDA(TSP &tsp) {
     // Transfer population data from CPU to GPU
     cudaMemcpy(tsp.d_population, tsp.populationFlat.data(), tsp.populationFlat.size() * sizeof(int), cudaMemcpyHostToDevice);
 
-    int threads = 128;
+    int threads = 256;
     int blocks = (tsp.popSize + threads - 1) / threads;
 
     // Record kernel execution time
@@ -489,7 +489,7 @@ void replacementCUDA(TSP &tsp) {
     cudaMemcpy(tsp.d_child2, tsp.offspringFlat.data() + totalGenesPerChild, totalGenesPerChild * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(tsp.d_offspringFitness, tsp.offspringFitnessFlat.data(), tsp.offspringFitnessFlat.size() * sizeof(float), cudaMemcpyHostToDevice);
 
-    int threads = 128;
+    int threads = 256;
     int blocks = (totalPairs + threads - 1) / threads;
     cudaEvent_t startEvent, stopEvent;
     cudaEventCreate(&startEvent);

@@ -1,3 +1,11 @@
+# Use this CMakeLists.txt and change 'CSS535_Project' to your own Project Name to run the project in CLion
+
+# To compile and run in Terminal:
+# nvcc -std=c++17 -I../include Main.cu GA_CPU.cpp GA_CUDA.cu GA_oneThreadPerGene.cu TSP.cpp -o main
+# ./main
+
+
+
 cmake_minimum_required(VERSION 3.10)
 
 project(CSS535_Project VERSION 1.0)

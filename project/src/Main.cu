@@ -340,8 +340,8 @@ int main() {
     float mutationProbability = 0.05f;
     int generations = 500;
 
-    constexpr bool runOneGenePerThreadImplementation = false;
-    constexpr bool runOneIndividualPerThreadImplementation = false;
+    constexpr bool runOneGenePerThreadImplementation = true;
+    constexpr bool runOneIndividualPerThreadImplementation = true;
 
     if (runOneGenePerThreadImplementation) {
 
@@ -356,10 +356,9 @@ int main() {
         std::cout << "Time Total Kernel: " << result.totalKernelTime << " seconds" << std::endl;
         std::cout << "Best Fitness: " << result.bestFitness << std::endl;
 
-        return 0;
 
     }
-    if (runOneGenePerThreadImplementation) {
+    if (runOneIndividualPerThreadImplementation) {
         // Strategy list
         std::vector strategies = {
             Implementation::CPU,
@@ -375,7 +374,7 @@ int main() {
         };
 
         // Open CSV file to write data
-        std::ofstream outfile("E:\\Cat\\Study\\UW\\CSS 535 High Performance Computing\\CSS535_HPC\\project\\data.csv");
+        std::ofstream outfile("..\\data.csv");
         outfile << "strategy,best_fitness,total_time,numCities,popSize,mapSize,numIslands,parentSelectionRate,crossoverProbability,mutationProbability,generations,"
                 << "sel_compute,sel_kernel,sel_total,"
                 << "cross_compute,cross_kernel,cross_total,"
