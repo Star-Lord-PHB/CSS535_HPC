@@ -4,6 +4,7 @@
 #include <iostream>
 
 
+/// @brief 2D array used in CUDA kernel, the underlying storage is still 1D
 template<typename  T>
 struct CudaArray2D {
 
@@ -27,6 +28,7 @@ struct CudaArray2D {
 };
 
 
+/// @brief 3D array used in CUDA kernel, the underlying storage is still 1D
 template<typename  T>
 struct CudaArray3D {
 
@@ -54,6 +56,7 @@ struct CudaArray3D {
 };
 
 
+/// @brief Metadata of a CUDA thread, including a thread local randd state and a block shared one
 struct KernelSpec {
     const unsigned int islandCount;
     const unsigned int individualCount;
@@ -85,6 +88,7 @@ struct KernelSpec {
 };
 
 
+/// @brief swap two elements
 template<typename T>
 __device__ void cuda_swap(T& a, T& b) {
     const auto temp = a;
@@ -93,6 +97,7 @@ __device__ void cuda_swap(T& a, T& b) {
 }
 
 
+/// @brief calculate the fitness of the input individual and place the output in `output`
 __device__ void calculate_fitness(
     const int* const individual,
     float* const fitnessCalcSpace,
@@ -124,6 +129,7 @@ __device__ void calculate_fitness(
 
 
 
+/// @brief create one random chromosome
 __device__ void make_initial_chromosome(int* const chromosome, float* const randomArray, KernelSpec& spec) {
 
     chromosome[spec.geneId] = static_cast<int>(spec.geneId);
@@ -162,6 +168,7 @@ __device__ void make_initial_chromosome(int* const chromosome, float* const rand
 
 
 
+/// @brief create random initialized solution
 __global__ void ga_kernel_initialize(int* const solution, float* const distanceMat) {
 
     // layout:
@@ -200,6 +207,7 @@ __global__ void ga_kernel_initialize(int* const solution, float* const distanceM
 
 
 
+/// @brief PMX crossover
 __device__ void ga_one_thread_per_gene_crossover(
     const CudaArray3D<int>& solution,
     const int* const individual,
@@ -253,6 +261,8 @@ __device__ void ga_one_thread_per_gene_crossover(
 }
 
 
+
+/// @brief Insertion Mutation
 __device__ void ga_one_thread_per_gene_mutation(
     int* const individual,
     const float mutationProb,
@@ -286,6 +296,7 @@ __device__ void ga_one_thread_per_gene_mutation(
 
 
 
+/// @brief Crossover + Mutation + Fitness Calculation + Replacement
 __global__ void ga_one_thread_per_gene_kernel1(
     int* const solution,
     float* const distanceMat,
@@ -330,14 +341,13 @@ __global__ void ga_one_thread_per_gene_kernel1(
         ga_one_thread_per_gene_crossover(
             solutionWrapped, localChromosome, crossoverProb, reinterpret_cast<int*>(localWorkspace), offspring, spec
         );
-        // offspring[spec.geneId] = localChromosome[spec.geneId];
     }
 
     __syncthreads();
 
     {
         // mutation
-        ga_one_thread_per_gene_mutation(offspring, 1, spec);
+        ga_one_thread_per_gene_mutation(offspring, mutationProb, spec);
     }
 
     __syncthreads();
@@ -360,34 +370,11 @@ __global__ void ga_one_thread_per_gene_kernel1(
         }
     }
 
-    // {
-    //     // Replacement
-    //     if (*offspringFitness < *localChromosomeFitness) {
-    //         localChromosome[spec.geneId] = offspring[spec.geneId];
-    //         if (spec.geneId == spec.chromosomeLength - 1) {
-    //             *localChromosomeFitness = *offspringFitness;
-    //         }
-    //     }
-    //     // localChromosome[spec.geneId] = offspring[spec.geneId];
-    //     // if (spec.geneId == spec.chromosomeLength - 1) {
-    //     //     *localChromosomeFitness = *offspringFitness;
-    //     // }
-    // }
-    //
-    // __syncthreads();
-    //
-    // {
-    //     // Move individual to solution global workspace
-    //     solutionGlobalWorkspace[spec.globalGeneId] = localChromosome[spec.geneId];
-    //     // solutionGlobalWorkspace[spec.globalGeneId] = offspring[spec.geneId];
-    //     if (spec.geneId == spec.chromosomeLength - 1) {
-    //         solutionGlobalWorkspace[spec.globalGeneId + 1] = *reinterpret_cast<int*>(localChromosomeFitness);
-    //     }
-    // }
-
 }
 
 
+
+/// @brief Find the best / worst individual in each island
 __global__ void ga_one_thread_per_gene_kernel2(
     const int* const solution,
     const unsigned chromosomeLength,
@@ -483,6 +470,8 @@ __global__ void ga_one_thread_per_gene_kernel2(
 }
 
 
+
+/// @brief Migration
 __global__ void ga_one_thread_per_gene_kernel3(
     int* const solution,
     const unsigned* const bestWorstIndividualIds,
@@ -507,6 +496,8 @@ __global__ void ga_one_thread_per_gene_kernel3(
 }
 
 
+
+/// @brief print 3D cuda array
 template<typename T>
 void printCudaArray3D(const T* const cuArray, unsigned x, unsigned y, unsigned z) {
     auto array = new Array3D<T>(x, y, z);
@@ -516,6 +507,7 @@ void printCudaArray3D(const T* const cuArray, unsigned x, unsigned y, unsigned z
 }
 
 
+/// @brief print 2D cuda array
 template<typename T>
 void printCudaArray2D(const T* const cuArray, unsigned x, unsigned y) {
     auto array = new Array2D<T>(x, y);
@@ -525,6 +517,8 @@ void printCudaArray2D(const T* const cuArray, unsigned x, unsigned y) {
 }
 
 
+
+/// @brief one thread per gene implementation (GPU)
 void ga_one_thread_per_gene(
     Array3D<int>& solution,
     const Array2D<float>& distanceMap,
@@ -571,12 +565,6 @@ void ga_one_thread_per_gene(
 
         // std::cout << "iteration " << i << std::endl;
 
-        // {
-        //     auto now_time_t = system_clock::to_time_t(system_clock::now());
-        //     auto now = *std::localtime(&now_time_t);
-        //     std::cout << std::put_time(&now, "%Y-%m-%d %H:%M:%S") << std::endl;
-        // }
-
         sharedMemorySize = (chromosomeLength * 3 + 2) * sizeof(int);
         ga_one_thread_per_gene_kernel1<<<dim3(islandCount, individualCount, 1), chromosomeLength, sharedMemorySize>>>(
             cudaSolution,
@@ -587,12 +575,6 @@ void ga_one_thread_per_gene(
             i
         );
         cudaDeviceSynchronize();
-
-        // {
-        //     auto now_time_t = system_clock::to_time_t(system_clock::now());
-        //     auto now = *std::localtime(&now_time_t);
-        //     std::cout << std::put_time(&now, "%Y-%m-%d %H:%M:%S") << std::endl;
-        // }
 
         cudaMemcpy(cudaSolution, cudaSolutionGlobalWorkspace, solutionSize * sizeof(int), cudaMemcpyDeviceToDevice);
 
@@ -619,11 +601,6 @@ void ga_one_thread_per_gene(
         //     delete solution1;
         // }
 
-        // {
-        //     auto now_time_t = system_clock::to_time_t(system_clock::now());
-        //     auto now = *std::localtime(&now_time_t);
-        //     std::cout << std::put_time(&now, "%Y-%m-%d %H:%M:%S") << std::endl;
-        // }
         // printCudaArray3D(cudaSolution, islandCount, individualCount, chromosomeLength + 1);
 
         sharedMemorySize = individualCount * 2 * sizeof(int);
@@ -634,11 +611,6 @@ void ga_one_thread_per_gene(
         );
         cudaDeviceSynchronize();
 
-        // {
-        //     auto now_time_t = system_clock::to_time_t(system_clock::now());
-        //     auto now = *std::localtime(&now_time_t);
-        //     std::cout << std::put_time(&now, "%Y-%m-%d %H:%M:%S") << std::endl;
-        // }
         // printCudaArray2D(cudaBestWorstIndividualIds, islandCount, 2);
 
         ga_one_thread_per_gene_kernel3<<<islandCount, chromosomeLength + 1>>>(
@@ -648,11 +620,6 @@ void ga_one_thread_per_gene(
         );
         cudaDeviceSynchronize();
 
-        // {
-        //     auto now_time_t = system_clock::to_time_t(system_clock::now());
-        //     auto now = *std::localtime(&now_time_t);
-        //     std::cout << std::put_time(&now, "%Y-%m-%d %H:%M:%S") << std::endl;
-        // }
         // printCudaArray3D(cudaSolution, islandCount, individualCount, chromosomeLength + 1);
 
     }
@@ -678,7 +645,7 @@ void ga_one_thread_per_gene(
 void ga_one_thread_per_gene_test() {
 
     auto solution = Array3D<int>(2, 3, 6);
-    auto distanceMap = Array2D<float>({
+    const auto distanceMap = Array2D<float>({
         { 1, 2, 4, 3, 5 },
         { 2, 1, 5, 4, 3 },
         { 4, 5, 1, 2, 1 },
